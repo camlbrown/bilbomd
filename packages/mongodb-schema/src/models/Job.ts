@@ -370,7 +370,11 @@ const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
     default: 'auto',
     required: false
   },
-  flex_ranges: { type: Schema.Types.Mixed, required: false }
+  flex_ranges: { type: Schema.Types.Mixed, required: false },
+  // B8: multimer mode and sequential chain-merge pairs (1-based).
+  // chain_merges shape stored as Mixed: [[i, j], ...]
+  multimer: { type: Boolean, default: false },
+  chain_merges: { type: Schema.Types.Mixed, required: false }
 })
 
 jobSchema.index({ uuid: 1 })

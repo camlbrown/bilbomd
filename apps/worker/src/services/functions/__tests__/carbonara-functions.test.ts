@@ -257,6 +257,85 @@ describe('buildCarbonaraJobJson', () => {
       ].sort()
     )
   })
+
+  // B8: multimer chain merges
+  it('emits chain_merges when multimer is true and chainMerges is non-empty', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'multimer-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'dimer.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      multimer: true,
+      chainMerges: [[1, 2], [1, 2]]
+    })
+    expect(json.parameters.chain_merges).toEqual([[1, 2], [1, 2]])
+  })
+
+  it('does NOT emit chain_merges when multimer is false (non-multimer regression)', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'non-multimer-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      multimer: false,
+      chainMerges: [[1, 2]]
+    })
+    expect(json.parameters).not.toHaveProperty('chain_merges')
+  })
+
+  it('does NOT emit chain_merges when multimer is true but chainMerges is empty', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'multimer-no-merges-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      multimer: true,
+      chainMerges: []
+    })
+    expect(json.parameters).not.toHaveProperty('chain_merges')
+  })
+
+  it('does NOT emit chain_merges when multimer is absent (Phase-1 regression)', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'phase1-regression-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams
+    })
+    expect(json.parameters).not.toHaveProperty('chain_merges')
+    // Phase-1 exact key set must be unchanged
+    expect(Object.keys(json.parameters).sort()).toEqual(
+      [
+        'fit_n_times',
+        'min_q',
+        'max_q',
+        'max_q_start',
+        'max_fit_steps',
+        'mixture_n',
+        'rotation'
+      ].sort()
+    )
+  })
+
+  it('multimer emits chain_merges alongside rotation without contaminating other keys', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'multimer-rotation-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: { ...baseParams, rotation: true },
+      multimer: true,
+      chainMerges: [[2, 3]]
+    })
+    expect(json.parameters.rotation).toBe(true)
+    expect(json.parameters.chain_merges).toEqual([[2, 3]])
+    expect(json.parameters).not.toHaveProperty('alphaFoldFlex')
+    expect(json.parameters).not.toHaveProperty('flex_ranges')
+  })
 })
 
 describe('buildCarbonaraContainerArgs', () => {

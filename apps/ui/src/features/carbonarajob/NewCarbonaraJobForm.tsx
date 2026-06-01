@@ -48,6 +48,13 @@ interface FlexRangeRow {
   stop: string
 }
 
+// B8: one row in the chain-merge editor.
+// Both indices are 1-based; they renumber after each merge.
+interface ChainMergeRow {
+  chainI: string
+  chainJ: string
+}
+
 interface CarbonaraJobFormValues {
   title: string
   pdb_file: string
@@ -74,6 +81,7 @@ const emptyPairRow = (): ConstraintPairRow => ({
 })
 
 const emptyFlexRow = (): FlexRangeRow => ({ chain: '1', start: '', stop: '' })
+const emptyMergeRow = (): ChainMergeRow => ({ chainI: '1', chainJ: '2' })
 
 const NewCarbonaraJobForm = () => {
   useTitle('BilboMD: New Carbonara Job')
@@ -81,6 +89,10 @@ const NewCarbonaraJobForm = () => {
   const [addNewCarbonaraJob, { isSuccess, data: jobResponse }] =
     useAddNewCarbonaraJobMutation()
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // B8: multimer mode toggle and chain-merge editor rows
+  const [multimer, setMultimer] = useState<boolean>(false)
+  const [mergeRows, setMergeRows] = useState<ChainMergeRow[]>([emptyMergeRow()])
 
   // B7: 3-way flexibility mode selector (replaces the PAE checkbox)
   const [flexMode, setFlexMode] = useState<'auto' | 'pae' | 'manual'>('auto')
@@ -178,6 +190,21 @@ const NewCarbonaraJobForm = () => {
         form.append('constraints_pairs', JSON.stringify(validPairs))
       }
     }
+    // B8: multimer + chain merges
+    form.append('multimer', multimer.toString())
+    if (multimer) {
+      const validMerges = mergeRows.filter(
+        (r) => r.chainI && r.chainJ && r.chainI !== r.chainJ
+      )
+      if (validMerges.length > 0) {
+        const merges = validMerges.map((r) => [
+          parseInt(r.chainI, 10),
+          parseInt(r.chainJ, 10)
+        ])
+        form.append('chain_merges', JSON.stringify(merges))
+      }
+    }
+
     form.append('bilbomd_mode', 'carbonara')
 
     try {
@@ -400,36 +427,56 @@ const NewCarbonaraJobForm = () => {
                       />
                     </Box>
 
+                    {/* B8: multimer mode toggle (top-level pathway choice) */}
                     <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-                      <Field name="rotation">
-                        {({
-                          field
-                        }: {
-                          field: {
-                            name: string
-                            value: boolean
-                            onChange: (
-                              e: React.ChangeEvent<HTMLInputElement>
-                            ) => void
-                          }
-                        }) => (
-                          <FormControlLabel
-                            control={
-                              <Checkbox
-                                checked={field.value}
-                                onChange={field.onChange}
-                                name={field.name}
-                                disabled={isSubmitting}
-                                slotProps={{
-                                  input: { 'aria-label': 'rotation-checkbox' }
-                                }}
-                              />
-                            }
-                            label="Allow affine rotation during fitting"
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={multimer}
+                            onChange={(e) => setMultimer(e.target.checked)}
+                            disabled={isSubmitting}
+                            slotProps={{
+                              input: { 'aria-label': 'multimer-checkbox' }
+                            }}
                           />
-                        )}
-                      </Field>
+                        }
+                        label="Multimer mode (enable chain merging)"
+                      />
                     </Box>
+
+                    {/* Rotation: shown here only when NOT in multimer mode */}
+                    {!multimer && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                        <Field name="rotation">
+                          {({
+                            field
+                          }: {
+                            field: {
+                              name: string
+                              value: boolean
+                              onChange: (
+                                e: React.ChangeEvent<HTMLInputElement>
+                              ) => void
+                            }
+                          }) => (
+                            <FormControlLabel
+                              control={
+                                <Checkbox
+                                  checked={field.value}
+                                  onChange={field.onChange}
+                                  name={field.name}
+                                  disabled={isSubmitting}
+                                  slotProps={{
+                                    input: { 'aria-label': 'rotation-checkbox' }
+                                  }}
+                                />
+                              }
+                              label="Allow affine rotation during fitting"
+                            />
+                          )}
+                        </Field>
+                      </Box>
+                    )}
 
                     <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
                       <Field name="all_atom">
@@ -687,6 +734,120 @@ const NewCarbonaraJobForm = () => {
                         </Box>
                       )}
                     </Box>
+
+                    {/* B8: multimer chain-merge editor (shown when multimer=true, after flexibility) */}
+                    {multimer && (
+                      <Box sx={{ mt: 2, mb: 1 }}>
+                        <Typography
+                          variant="subtitle2"
+                          sx={{ mb: 0.5, fontWeight: 600 }}
+                        >
+                          Chain merges (multimer)
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                          Merges are applied in order. After each merge the
+                          remaining chains are renumbered, so later pairs use the
+                          updated numbering. Chain 1 = first chain.
+                        </Typography>
+                        {mergeRows.map((row, idx) => (
+                          <Box
+                            key={idx}
+                            sx={{
+                              display: 'flex',
+                              gap: 1,
+                              mt: 1,
+                              alignItems: 'center'
+                            }}
+                          >
+                            <TextField
+                              label="Chain i"
+                              size="small"
+                              type="number"
+                              value={row.chainI}
+                              onChange={(e) => {
+                                const updated = mergeRows.map(
+                                  (r, i): ChainMergeRow =>
+                                    i === idx ? { ...r, chainI: e.target.value } : r
+                                )
+                                setMergeRows(updated)
+                              }}
+                              sx={{ width: '80px' }}
+                              disabled={isSubmitting}
+                              slotProps={{ htmlInput: { min: 1, 'aria-label': `merge-chain-i-${idx}` } }}
+                            />
+                            <TextField
+                              label="Chain j"
+                              size="small"
+                              type="number"
+                              value={row.chainJ}
+                              onChange={(e) => {
+                                const updated = mergeRows.map(
+                                  (r, i): ChainMergeRow =>
+                                    i === idx ? { ...r, chainJ: e.target.value } : r
+                                )
+                                setMergeRows(updated)
+                              }}
+                              sx={{ width: '80px' }}
+                              disabled={isSubmitting}
+                              slotProps={{ htmlInput: { min: 1, 'aria-label': `merge-chain-j-${idx}` } }}
+                            />
+                            <IconButton
+                              size="small"
+                              disabled={isSubmitting || mergeRows.length <= 1}
+                              onClick={() =>
+                                setMergeRows(mergeRows.filter((_, i) => i !== idx))
+                              }
+                              aria-label="remove-merge-row"
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        ))}
+                        <Button
+                          size="small"
+                          startIcon={<AddIcon />}
+                          onClick={() =>
+                            setMergeRows([...mergeRows, emptyMergeRow()])
+                          }
+                          disabled={isSubmitting}
+                          sx={{ mt: 1 }}
+                        >
+                          Add merge
+                        </Button>
+
+                        {/* Rotation grouped into multimer section */}
+                        <Box sx={{ mt: 1 }}>
+                          <Field name="rotation">
+                            {({
+                              field
+                            }: {
+                              field: {
+                                name: string
+                                value: boolean
+                                onChange: (
+                                  e: React.ChangeEvent<HTMLInputElement>
+                                ) => void
+                              }
+                            }) => (
+                              <FormControlLabel
+                                control={
+                                  <Checkbox
+                                    checked={field.value}
+                                    onChange={field.onChange}
+                                    name={field.name}
+                                    disabled={isSubmitting}
+                                    slotProps={{
+                                      input: { 'aria-label': 'rotation-checkbox' }
+                                    }}
+                                  />
+                                }
+                                label="Allow affine rotation during fitting"
+                              />
+                            )}
+                          </Field>
+                        </Box>
+                      </Box>
+                    )}
 
                     {/* Optional distance constraints section */}
                     <Box sx={{ mt: 2, mb: 1 }}>

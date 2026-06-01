@@ -106,7 +106,9 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       flexMode: foundJob.flex_mode,
       flexRanges: foundJob.flex_ranges as
         | { chain: number; ranges: number[][] }[]
-        | undefined
+        | undefined,
+      multimer: foundJob.multimer,
+      chainMerges: foundJob.chain_merges as number[][] | undefined
     })
     const jobJsonPath = path.join(workDir, 'job.json')
     await fs.writeJson(jobJsonPath, jobJson, { spaces: 2 })

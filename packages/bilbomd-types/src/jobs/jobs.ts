@@ -162,6 +162,9 @@ export interface BilboMDCarbonaraDTO extends BaseJobDTO {
   // B7: 3-way flexibility mode and manual residue ranges
   flex_mode?: string
   flex_ranges?: { chain: number; ranges: number[][] }[]
+  // B8: multimer mode and sequential chain-merge pairs (1-based)
+  multimer?: boolean
+  chain_merges?: number[][]
 }
 
 export interface BilboMDMultiDTO extends BaseJobDTO {

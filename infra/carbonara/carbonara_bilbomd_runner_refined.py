@@ -447,6 +447,68 @@ def summarise_outputs(fitdata_dir: Path) -> dict[str, Any]:
     }
 
 
+def apply_merges(
+    *,
+    carbonara_root: Path,
+    scenario_dir: Path,
+    chain_merges: list[list[int]],
+    mixture_n: int,
+) -> None:
+    """
+    Apply sequential chain merges to fingerPrint1.dat / varyingSectionSecondary1.dat
+    in-place, then replicate to fingerPrint{2..N}.dat / varyingSectionSecondary{2..N}.dat
+    for mixture ensembles.
+
+    Chain indices are 1-based and RENUMBER after each merge (e.g. after merging
+    chains (1, 2), the old chain 3 becomes chain 2). Callers must account for
+    renumbering when building the pair list.
+
+    Must be called AFTER setup (so fingerPrint1.dat / varyingSectionSecondary1.dat
+    already exist in scenario_dir) and AFTER apply_flexibility (which may have
+    updated varyingSectionSecondary1.dat), and BEFORE apply_constraints /
+    patch_runme_for_bilbomd.
+
+    CDT contract (verified, all 1-based, fingerprint-only — no pdb/chdir needed):
+      cdt.parse_structures_with_segments(fp_path) -> chains
+      cdt.create_segment_label_arrays_with_merge_v4(chains, highlighted, merge_pair)
+        -> (_orig, _edit, remapped_highlighted)
+      cdt.merge_chains_only_clean_consistent_segments(chains, merge_pair)
+        -> merged_chains
+      cdt.export_chains_to_file(merged_chains, fp_path)
+      cdt.export_segment_list(remapped_highlighted, vs_path)
+    """
+    import sys
+    import numpy as np
+
+    sys.path.insert(0, str(carbonara_root))
+    import CarbonaraDataTools as cdt  # type: ignore[import-not-found]
+
+    fp = scenario_dir / "fingerPrint1.dat"
+    vs = scenario_dir / "varyingSectionSecondary1.dat"
+
+    for pair in chain_merges:
+        merge_pair = (int(pair[0]), int(pair[1]))
+        chains = cdt.parse_structures_with_segments(str(fp))
+        # np.atleast_1d is robust to 0-d arrays produced by np.loadtxt on a
+        # single-element file; handle empty varyingSection gracefully.
+        if vs.exists() and vs.stat().st_size > 0:
+            raw = np.loadtxt(str(vs), dtype=int)
+            highlighted = np.atleast_1d(raw)
+        else:
+            highlighted = np.array([], dtype=int)
+        _orig, _edit, remapped = cdt.create_segment_label_arrays_with_merge_v4(
+            chains, highlighted, merge_pair
+        )
+        merged = cdt.merge_chains_only_clean_consistent_segments(chains, merge_pair)
+        cdt.export_chains_to_file(merged, str(fp))
+        cdt.export_segment_list(remapped, str(vs))
+
+    if mixture_n > 1:
+        for i in range(2, mixture_n + 1):
+            shutil.copyfile(fp, scenario_dir / f"fingerPrint{i}.dat")
+            shutil.copyfile(vs, scenario_dir / f"varyingSectionSecondary{i}.dat")
+
+
 def apply_flexibility(
     *,
     carbonara_root: Path,
@@ -711,15 +773,17 @@ def main() -> int:
     mixture_n = int(params.get("mixture_n", 1))
 
     # Computed step numbering: build the ordered list of optional apply phases
-    # that will actually run (flexibility -> constraints), then number the fixed
-    # phases (setup=1, patch, fit, collect) around them.
-    #   N = 3 (setup + patch + fit + collect base) + len(optional_phases)
-    # but we actually have 4 fixed phases so N = 4 + len(optional_phases).
+    # that will actually run (flexibility -> merges -> constraints), then number
+    # the fixed phases (setup=1, patch, fit, collect) around them.
+    #   total = 4 fixed phases + len(optional_phases)
     optional_phases = []
     flex_ranges_param = params.get("flex_ranges")
+    chain_merges_param = params.get("chain_merges")
     constraints_file_param = params.get("constraints_file")
     if flex_ranges_param:
         optional_phases.append("flexibility")
+    if chain_merges_param:
+        optional_phases.append("merges")
     if constraints_file_param:
         optional_phases.append("constraints")
 
@@ -731,6 +795,12 @@ def main() -> int:
         next_step += 1
     else:
         step_flex = None
+
+    if "merges" in optional_phases:
+        step_merges = f"{next_step}/{total_steps}"
+        next_step += 1
+    else:
+        step_merges = None
 
     if "constraints" in optional_phases:
         step_constraints = f"{next_step}/{total_steps}"
@@ -765,6 +835,35 @@ def main() -> int:
                 summary,
                 status="flexibility_failed",
                 flexibility_error=str(exc),
+            )
+            collect_outputs(
+                carbonara_run_dir=carbonara_run_dir,
+                run_script=run_script if run_script.exists() else None,
+                log_file=log_file,
+                summary_path=summary_path,
+                outdir=outdir,
+                summary=summary,
+            )
+            return 1
+
+    # --- Optional: chain merges (B8) ---
+    if chain_merges_param and step_merges is not None:
+        print(f"\n[{step_merges}] Merging chains ...\n")
+        update_summary(summary_path, summary, status="applying_merges")
+        try:
+            apply_merges(
+                carbonara_root=carbonara_root,
+                scenario_dir=carbonara_run_dir,
+                chain_merges=list(chain_merges_param),
+                mixture_n=mixture_n,
+            )
+        except Exception as exc:
+            print(f"\nMerges apply step failed: {exc}", file=sys.stderr)
+            update_summary(
+                summary_path,
+                summary,
+                status="merges_failed",
+                merges_error=str(exc),
             )
             collect_outputs(
                 carbonara_run_dir=carbonara_run_dir,

@@ -176,5 +176,46 @@ export const carbonaraJobSchema = yup.object({
         }
       ),
     otherwise: (s) => s.optional()
+  }),
+  // B8: multimer mode toggle (default false).
+  multimer: yup.boolean().optional(),
+  // chain_merges is validated WHEN multimer === true: must be an array of
+  // [i, j] pairs where i, j are positive integers and i !== j.
+  // Empty array is allowed (multimer on but no merges yet).
+  chain_merges: yup.mixed().when('multimer', {
+    is: true,
+    then: (s) =>
+      s.test(
+        'chain-merges-shape',
+        'chain_merges must be an array of [i,j] positive integer pairs with i !== j',
+        function (value) {
+          // undefined / null / empty array => valid (no merges yet)
+          if (value === undefined || value === null) return true
+          if (!Array.isArray(value)) {
+            return this.createError({
+              message: 'chain_merges must be an array when multimer is true'
+            })
+          }
+          for (const pair of value as unknown[]) {
+            const p = pair as number[]
+            if (
+              !Array.isArray(p) ||
+              p.length !== 2 ||
+              !Number.isInteger(p[0]) ||
+              !Number.isInteger(p[1]) ||
+              p[0] < 1 ||
+              p[1] < 1 ||
+              p[0] === p[1]
+            ) {
+              return this.createError({
+                message:
+                  'Each chain_merges entry must be [i,j] with positive integers and i !== j'
+              })
+            }
+          }
+          return true
+        }
+      ),
+    otherwise: (s) => s.optional()
   })
 })

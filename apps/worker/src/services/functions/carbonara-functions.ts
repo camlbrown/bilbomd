@@ -32,6 +32,8 @@ export interface CarbonaraJobParameters {
   constraints_file?: string
   // B7: manual flexibility — object form {"1": [[start,stop],...]}
   flex_ranges?: Record<string, number[][]>
+  // B8: chain merges — [[i,j],...] 1-based sequential pairs
+  chain_merges?: number[][]
 }
 
 export interface CarbonaraJobJson {
@@ -64,6 +66,10 @@ export interface BuildCarbonaraJobJsonOptions {
   // an object { "1": [[start,stop],...] } and does NOT emit alphaFoldFlex.
   flexMode?: string
   flexRanges?: { chain: number; ranges: number[][] }[]
+  // B8: multimer mode and sequential chain-merge pairs.
+  // chain_merges is emitted ONLY when multimer===true AND chainMerges.length>0.
+  multimer?: boolean
+  chainMerges?: number[][]
 }
 
 /**
@@ -112,6 +118,11 @@ export const buildCarbonaraJobJson = (
 
   if (opts.constraintsFileName) {
     baseParameters.constraints_file = `${CARBONARA_JOB_MOUNT}/${opts.constraintsFileName}`
+  }
+
+  // B8: emit chain_merges only when multimer mode is on and merges are present.
+  if (opts.multimer === true && opts.chainMerges && opts.chainMerges.length > 0) {
+    baseParameters.chain_merges = opts.chainMerges
   }
 
   return {

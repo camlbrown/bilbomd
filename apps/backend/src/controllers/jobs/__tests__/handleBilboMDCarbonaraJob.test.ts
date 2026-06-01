@@ -435,6 +435,89 @@ describe('handleBilboMDCarbonaraJob', () => {
     })
   })
 
+  describe('B8 multimer chain merges', () => {
+    it('stores multimer=true and chain_merges when multimer is on and merges are provided', async () => {
+      const merges = [[1, 2], [1, 2]]
+      const { req, res } = makeReqRes({
+        multimer: 'true',
+        chain_merges: JSON.stringify(merges)
+      })
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.multimer).toBe(true)
+      expect(data.chain_merges).toEqual(merges)
+    })
+
+    it('stores multimer=false and ignores chain_merges when multimer is off', async () => {
+      const merges = [[1, 2]]
+      const { req, res } = makeReqRes({
+        multimer: 'false',
+        chain_merges: JSON.stringify(merges)
+      })
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.multimer).toBe(false)
+      // chain_merges must be omitted when multimer is false
+      expect(data.chain_merges).toBeUndefined()
+    })
+
+    it('stores multimer=false and no chain_merges by default (non-multimer regression)', async () => {
+      const { req, res } = makeReqRes()
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.multimer).toBe(false)
+      expect(data.chain_merges).toBeUndefined()
+    })
+
+    it('stores multimer=true with empty chain_merges array when no merges are provided', async () => {
+      const { req, res } = makeReqRes({
+        multimer: 'true',
+        chain_merges: JSON.stringify([])
+      })
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.multimer).toBe(true)
+      // empty array stored (multimer on, no merges yet)
+      expect(data.chain_merges).toEqual([])
+    })
+  })
+
   describe('error handling', () => {
     it('returns 500 when job save throws', async () => {
       const { req, res } = makeReqRes()

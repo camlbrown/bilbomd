@@ -269,7 +269,9 @@ export const mapJobMongoToDTO = (job: IJob) => {
         flex_mode: carbonaraJob.flex_mode,
         flex_ranges: carbonaraJob.flex_ranges as
           | { chain: number; ranges: number[][] }[]
-          | undefined
+          | undefined,
+        multimer: carbonaraJob.multimer,
+        chain_merges: carbonaraJob.chain_merges as number[][] | undefined
       } as BilboMDCarbonaraDTO
     }
 

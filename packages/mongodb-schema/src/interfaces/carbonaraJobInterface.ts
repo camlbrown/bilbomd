@@ -21,6 +21,11 @@ interface IBilboMDCarbonaraJob extends IJob {
   // flex_ranges shape: [{ chain: 1, ranges: [[start, stop], ...] }, ...]
   flex_mode?: string
   flex_ranges?: { chain: number; ranges: number[][] }[]
+  // B8: multimer mode (default false) and sequential chain-merge pairs.
+  // chain_merges shape: [[i, j], ...] — 1-based pairs applied in order;
+  // chain indices renumber after each merge.
+  multimer?: boolean
+  chain_merges?: number[][]
 }
 
 export { IBilboMDCarbonaraJob }

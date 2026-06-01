@@ -86,6 +86,24 @@ const handleBilboMDCarbonaraJob = async (
       } as Express.Multer.File
     }
 
+    // B8: multimer mode toggle. When false, chain_merges is ignored even if provided.
+    const multimer = toBoolean(req.body.multimer)
+
+    let chainMerges: number[][] | undefined
+    if (multimer && req.body.chain_merges) {
+      try {
+        const parsed =
+          typeof req.body.chain_merges === 'string'
+            ? JSON.parse(req.body.chain_merges)
+            : req.body.chain_merges
+        if (Array.isArray(parsed)) {
+          chainMerges = parsed as number[][]
+        }
+      } catch (parseErr) {
+        logger.warn(`Failed to parse chain_merges: ${parseErr}`)
+      }
+    }
+
     // B7: 3-way flexibility mode. Mutually exclusive:
     //   'manual' -> store flex_ranges, force alphafold_flex=false, ignore pae_file
     //   'pae'    -> existing PAE path (alphafold_flex=true)
@@ -177,7 +195,9 @@ const handleBilboMDCarbonaraJob = async (
       alphafold_flex: alphafoldFlex,
       pae_flex_threshold: paeFlexThreshold,
       flex_mode: flexMode,
-      flex_ranges: flexRanges
+      flex_ranges: flexRanges,
+      multimer,
+      chain_merges: chainMerges
     }
 
     try {
@@ -232,6 +252,8 @@ const handleBilboMDCarbonaraJob = async (
       pae_flex_threshold: paeFlexThreshold,
       flex_mode: flexMode,
       flex_ranges: flexMode === 'manual' ? flexRanges : undefined,
+      multimer,
+      chain_merges: multimer ? chainMerges : undefined,
       status: 'Submitted',
       time_submitted: new Date(),
       steps,

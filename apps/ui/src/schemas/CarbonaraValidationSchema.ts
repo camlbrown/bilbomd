@@ -82,6 +82,8 @@ export const bilbomdCarbonaraJobSchema = object().shape({
   // B7: flex_mode drives the 3-way selector; flex_ranges validated client-side
   // via the submit-disable condition (manual needs >= 1 valid row).
   flex_mode: string().oneOf(['auto', 'pae', 'manual']).optional(),
+  // B8: multimer toggle and chain_merges (validated client-side via merge editor)
+  multimer: boolean().optional(),
   // Optional distance-constraints file — all validation is optional
   constraints_file: mixed()
     .test(
