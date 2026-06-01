@@ -259,7 +259,9 @@ export const mapJobMongoToDTO = (job: IJob) => {
         max_q_start: carbonaraJob.max_q_start,
         max_fit_steps: carbonaraJob.max_fit_steps,
         mixture_n: carbonaraJob.mixture_n,
-        rotation: carbonaraJob.rotation
+        rotation: carbonaraJob.rotation,
+        all_atom: carbonaraJob.all_atom,
+        do_foxs: carbonaraJob.do_foxs
       } as BilboMDCarbonaraDTO
     }
 

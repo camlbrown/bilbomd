@@ -63,5 +63,7 @@ export const carbonaraJobSchema = yup.object({
     .integer('mixture_n must be an integer')
     .min(1, 'mixture_n must be at least 1')
     .optional(),
-  rotation: yup.boolean().optional()
+  rotation: yup.boolean().optional(),
+  all_atom: yup.boolean().optional(),
+  do_foxs: yup.boolean().optional()
 })

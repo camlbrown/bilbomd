@@ -10,6 +10,8 @@ interface IBilboMDCarbonaraJob extends IJob {
   max_fit_steps: number
   mixture_n: number
   rotation?: boolean
+  all_atom?: boolean
+  do_foxs?: boolean
 }
 
 export { IBilboMDCarbonaraJob }

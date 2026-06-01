@@ -87,7 +87,9 @@ const handleBilboMDCarbonaraJob = async (
       max_q_start: req.body.max_q_start,
       max_fit_steps: req.body.max_fit_steps,
       mixture_n: req.body.mixture_n,
-      rotation: req.body.rotation
+      rotation: req.body.rotation,
+      all_atom: req.body.all_atom,
+      do_foxs: req.body.do_foxs
     }
 
     try {
@@ -128,6 +130,8 @@ const handleBilboMDCarbonaraJob = async (
       ),
       mixture_n: toNumber(req.body.mixture_n, CARBONARA_DEFAULTS.mixture_n),
       rotation: toBoolean(req.body.rotation),
+      all_atom: toBoolean(req.body.all_atom),
+      do_foxs: req.body.do_foxs !== undefined ? toBoolean(req.body.do_foxs) : true,
       status: 'Submitted',
       time_submitted: new Date(),
       steps,

@@ -114,6 +114,7 @@ export interface CarbonaraWrapperSummary {
   n_nonempty_final_model_files?: number
   n_nonempty_model_like_files?: number
   final_model_files?: string[]
+  fitdata_dir?: string
   [key: string]: unknown
 }
 
@@ -177,6 +178,209 @@ export const parseCarbonaraSummary = (jsonText: string): CarbonaraResult => {
     summary
   }
 }
+
+// ---------------------------------------------------------------------------
+// A2 — cg2all all-atom reconstruction helpers (pure, no config import)
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the fingerprint filename from a coords basename.
+ * Matches /_sub_(\d+)_/ and returns fingerPrint{n+1}.dat; falls back to
+ * fingerPrint1.dat when no _sub_ token is found.
+ * Mirrors monitor_utils.fingerprint_for_dat.
+ */
+export const fingerprintForCoords = (coordsBasename: string): string => {
+  const m = coordsBasename.match(/_sub_(\d+)_/)
+  if (m) {
+    return `fingerPrint${Number(m[1]) + 1}.dat`
+  }
+  return 'fingerPrint1.dat'
+}
+
+/**
+ * Derive the --name argument for backmap_cli.py from a coords basename.
+ * Strips the trailing _xyz.dat suffix.
+ */
+export const backmapNameForCoords = (coordsBasename: string): string =>
+  coordsBasename.replace(/_xyz\.dat$/, '')
+
+export interface ReconstructionTask {
+  coords: string
+  fingerprint: string
+  name: string
+  outdir: string
+}
+
+export interface BuildReconstructionPlanOptions {
+  /** Absolute in-container paths to the coords files (from wrapper_summary). */
+  coordsFiles: string[]
+  /** In-container path to the scenario root (chainLengths.dat lives here). */
+  scenarioRoot: string
+  /** In-container path for AA output root (e.g. /job/results/all_atom). */
+  outRoot: string
+  /** Maximum number of tasks to build; excess files are silently dropped. */
+  maxModels: number
+}
+
+/**
+ * Build one ReconstructionTask per coords file, capped at maxModels.
+ * The caller should log a warning when the returned array is shorter than the
+ * input.
+ */
+export const buildReconstructionPlan = (
+  opts: BuildReconstructionPlanOptions
+): ReconstructionTask[] => {
+  const { coordsFiles, scenarioRoot, outRoot, maxModels } = opts
+  const capped = coordsFiles.slice(0, maxModels)
+  return capped.map((coords) => {
+    const base = coords.split('/').at(-1) ?? coords
+    const fingerprint = `${scenarioRoot}/${fingerprintForCoords(base)}`
+    const name = backmapNameForCoords(base)
+    const outdir = `${outRoot}/${name}`
+    return { coords, fingerprint, name, outdir }
+  })
+}
+
+export interface BuildBackmapLoopCommandOptions {
+  pythonBin: string
+  carbonaraRoot: string
+  cg2allExec: string
+  doFoxs: boolean
+  foxsCmd: string
+  saxs: string
+  maxQ: number
+  disulfideFile?: string
+}
+
+/**
+ * Build a single bash -lc body that loops over tasks and runs backmap_cli.py
+ * per task. Uses set +e so one failure does not abort the rest.
+ */
+export const buildBackmapLoopCommand = (
+  tasks: ReconstructionTask[],
+  opts: BuildBackmapLoopCommandOptions
+): string => {
+  const {
+    pythonBin,
+    carbonaraRoot,
+    cg2allExec,
+    doFoxs,
+    foxsCmd,
+    saxs,
+    maxQ,
+    disulfideFile
+  } = opts
+
+  const scenarioRoot =
+    tasks.length > 0
+      ? tasks[0].fingerprint.split('/').slice(0, -1).join('/')
+      : ''
+
+  const taskBlocks = tasks.map((t) => {
+    const baseArgs = [
+      `'${pythonBin}'`,
+      `'${carbonaraRoot}/backmap_cli.py'`,
+      '--backend cg2all',
+      `--cg2all-exec '${cg2allExec}'`,
+      `--coords '${t.coords}'`,
+      `--fingerprint '${t.fingerprint}'`,
+      `--scenario-root '${scenarioRoot}'`,
+      `--outdir '${t.outdir}'`,
+      `--name '${t.name}'`
+    ]
+
+    if (disulfideFile) {
+      baseArgs.push(`--disulfide-file '${disulfideFile}'`)
+    }
+
+    if (doFoxs) {
+      baseArgs.push(
+        '--do-foxs',
+        `--foxs-py '${foxsCmd}'`,
+        `--saxs '${saxs}'`,
+        `--max-q '${maxQ}'`,
+        `--foxs-out '${t.outdir}/foxs_results.txt'`
+      )
+    }
+
+    return (
+      `mkdir -p '${t.outdir}'\n` +
+      baseArgs.join(' \\\n  ') +
+      `\n_rc_${t.name.replace(/[^a-zA-Z0-9_]/g, '_')}=$?`
+    )
+  })
+
+  return `set +e\n${taskBlocks.join('\n')}`
+}
+
+export interface FoxsEntry {
+  aaPdb: string
+  chi2: number | null
+}
+
+/**
+ * Parse the text of a foxs_results.txt produced by backmap_cli.py.
+ * Each non-empty line: first token = AA PDB path, second token = chi2 (or
+ * 'ERROR' / unparseable → null).
+ * Mirrors monitor_utils.parse_foxs_results_file.
+ */
+export const parseFoxsResultsSummary = (text: string): FoxsEntry[] => {
+  return text
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const tokens = line.trim().split(/\s+/)
+      const aaPdb = tokens[0]
+      const raw = tokens[1]
+      let chi2: number | null = null
+      if (raw && raw !== 'ERROR') {
+        const n = Number(raw)
+        chi2 = Number.isFinite(n) ? n : null
+      }
+      return { aaPdb, chi2 }
+    })
+}
+
+/**
+ * Select the entry with the minimum numeric chi2 from a set of FoXS result
+ * entries. Returns null when no entry has a finite chi2.
+ */
+export const selectBestAaModel = (
+  entries: FoxsEntry[]
+): FoxsEntry | null => {
+  let best: FoxsEntry | null = null
+  for (const entry of entries) {
+    if (entry.chi2 !== null) {
+      if (best === null || entry.chi2 < (best.chi2 as number)) {
+        best = entry
+      }
+    }
+  }
+  return best
+}
+
+export interface BuildBackmapContainerArgsOptions {
+  image: string
+  hostJobDir: string
+  loopBody: string
+}
+
+/**
+ * Build the podman argument vector for the backmap container run.
+ * Invokes /bin/bash -lc <loopBody> inside the container.
+ */
+export const buildBackmapContainerArgs = (
+  opts: BuildBackmapContainerArgsOptions
+): string[] => [
+  'run',
+  '--rm',
+  '-v',
+  `${opts.hostJobDir}:${CARBONARA_JOB_MOUNT}:Z`,
+  opts.image,
+  '/bin/bash',
+  '-lc',
+  opts.loopBody
+]
 
 export interface RunCarbonaraContainerOptions {
   containerBin: string

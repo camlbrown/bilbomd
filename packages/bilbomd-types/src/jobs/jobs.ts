@@ -153,6 +153,8 @@ export interface BilboMDCarbonaraDTO extends BaseJobDTO {
   max_fit_steps: number
   mixture_n: number
   rotation?: boolean
+  all_atom?: boolean
+  do_foxs?: boolean
 }
 
 export interface BilboMDMultiDTO extends BaseJobDTO {

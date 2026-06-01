@@ -34,6 +34,8 @@ interface CarbonaraJobFormValues {
   max_q: number
   max_fit_steps: number
   rotation: boolean
+  all_atom: boolean
+  do_foxs: boolean
 }
 
 const NewCarbonaraJobForm = () => {
@@ -59,7 +61,9 @@ const NewCarbonaraJobForm = () => {
     min_q: 0.01,
     max_q: 0.2,
     max_fit_steps: 1000,
-    rotation: false
+    rotation: false,
+    all_atom: false,
+    do_foxs: true
   }
 
   const onSubmit = async (
@@ -76,6 +80,8 @@ const NewCarbonaraJobForm = () => {
     form.append('max_q', values.max_q.toString())
     form.append('max_fit_steps', values.max_fit_steps.toString())
     form.append('rotation', values.rotation.toString())
+    form.append('all_atom', values.all_atom.toString())
+    form.append('do_foxs', values.do_foxs.toString())
     form.append('bilbomd_mode', 'carbonara')
 
     try {
@@ -328,6 +334,81 @@ const NewCarbonaraJobForm = () => {
                         )}
                       </Field>
                     </Box>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                      <Field name="all_atom">
+                        {({
+                          field
+                        }: {
+                          field: {
+                            name: string
+                            value: boolean
+                            onChange: (
+                              e: React.ChangeEvent<HTMLInputElement>
+                            ) => void
+                          }
+                        }) => (
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={field.value}
+                                onChange={field.onChange}
+                                name={field.name}
+                                disabled={isSubmitting}
+                                slotProps={{
+                                  input: {
+                                    'aria-label': 'all-atom-checkbox'
+                                  }
+                                }}
+                              />
+                            }
+                            label="Return all-atom models (cg2all)"
+                          />
+                        )}
+                      </Field>
+                    </Box>
+
+                    {values.all_atom && (
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          ml: 3,
+                          mt: 0.5
+                        }}
+                      >
+                        <Field name="do_foxs">
+                          {({
+                            field
+                          }: {
+                            field: {
+                              name: string
+                              value: boolean
+                              onChange: (
+                                e: React.ChangeEvent<HTMLInputElement>
+                              ) => void
+                            }
+                          }) => (
+                            <FormControlLabel
+                              control={
+                                <Checkbox
+                                  checked={field.value}
+                                  onChange={field.onChange}
+                                  name={field.name}
+                                  disabled={isSubmitting}
+                                  slotProps={{
+                                    input: {
+                                      'aria-label': 'do-foxs-checkbox'
+                                    }
+                                  }}
+                                />
+                              }
+                              label="Score with FoXS"
+                            />
+                          )}
+                        </Field>
+                      </Box>
+                    )}
 
                     {isSubmitting && (
                       <Box sx={{ my: 1, width: '520px' }}>

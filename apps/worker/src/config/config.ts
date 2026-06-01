@@ -123,6 +123,17 @@ export const config = {
     ),
     // In-container python used to launch the wrapper.
     pythonBin: getEnvVarWithDefault('CARBONARA_PYTHON_BIN', 'python'),
-    timeoutMs: parsePositiveIntEnv('CARBONARA_TIMEOUT_MS', 6 * 60 * 60 * 1000)
+    timeoutMs: parsePositiveIntEnv('CARBONARA_TIMEOUT_MS', 6 * 60 * 60 * 1000),
+    // cg2all all-atom reconstruction settings (A2).
+    cg2allExec: getEnvVarWithDefault(
+      'CARBONARA_CG2ALL_EXEC',
+      'convert_cg2all_carbonara'
+    ),
+    foxsCmd: getEnvVarWithDefault('CARBONARA_FOXS_CMD', 'pyfoxs'),
+    maxBackmap: parsePositiveIntEnv('CARBONARA_MAX_BACKMAP', 5),
+    backmapTimeoutMs: parsePositiveIntEnv(
+      'CARBONARA_BACKMAP_TIMEOUT_MS',
+      60 * 60 * 1000
+    )
   }
 }
