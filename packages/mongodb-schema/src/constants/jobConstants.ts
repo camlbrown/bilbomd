@@ -8,7 +8,8 @@ export const jobTypeDisplayNames: Record<IJob['__t'], string> = {
   BilboMdScoper: 'Scoper',
   BilboMdAlphaFold: 'BilboMD (AlphaFold)',
   BilboMdOpenFold: 'BilboMD (OpenFold3)',
-  BilboMdSANS: 'BilboMD (SANS)'
+  BilboMdSANS: 'BilboMD (SANS)',
+  BilboMdCarbonara: 'Carbonara'
 }
 
 // export { jobTypeDisplayNames }

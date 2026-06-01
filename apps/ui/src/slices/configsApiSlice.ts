@@ -4,6 +4,7 @@ export interface ConfigResponse {
   useNersc?: string
   enableBilboMdAlphaFold?: string
   enableBilboMdOpenfold?: string
+  enableBilboMdCarbonara?: string
   enableCharmmEngine?: string
   orcidAuthEnabled?: string
   [key: string]: string | undefined

@@ -8,6 +8,7 @@ import type {
   BilboMDOpenFoldDTO,
   BilboMDSANSDTO,
   BilboMDScoperDTO,
+  BilboMDCarbonaraDTO,
   JobType,
   JobStatusEnum as JobStatus,
   UserSummaryDTO,
@@ -23,7 +24,8 @@ import type {
   IBilboMDAlphaFoldJob,
   IBilboMDOpenFoldJob,
   IBilboMDSANSJob,
-  IBilboMDScoperJob
+  IBilboMDScoperJob,
+  IBilboMDCarbonaraJob
 } from '@bilbomd/mongodb-schema'
 
 export const mapDiscriminatorToJobType = (__t?: string): JobType => {
@@ -42,6 +44,8 @@ export const mapDiscriminatorToJobType = (__t?: string): JobType => {
       return 'sans'
     case 'BilboMdScoper':
       return 'scoper'
+    case 'BilboMdCarbonara':
+      return 'carbonara'
     case 'MultiJob':
       return 'multi'
     default:
@@ -242,6 +246,21 @@ export const mapJobMongoToDTO = (job: IJob) => {
         fixc1c2: scoperJob.fixc1c2,
         foxs_top_file: scoperJob.foxs_top_file
       } as BilboMDScoperDTO
+    }
+
+    case 'carbonara': {
+      const carbonaraJob = job as IBilboMDCarbonaraJob
+      return {
+        ...base,
+        pdb_file: carbonaraJob.pdb_file,
+        fit_n_times: carbonaraJob.fit_n_times,
+        min_q: carbonaraJob.min_q,
+        max_q: carbonaraJob.max_q,
+        max_q_start: carbonaraJob.max_q_start,
+        max_fit_steps: carbonaraJob.max_fit_steps,
+        mixture_n: carbonaraJob.mixture_n,
+        rotation: carbonaraJob.rotation
+      } as BilboMDCarbonaraDTO
     }
 
     case 'multi':

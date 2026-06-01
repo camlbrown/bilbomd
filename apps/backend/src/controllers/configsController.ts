@@ -67,6 +67,7 @@ export const getConfigsStuff = async (
       'ENABLE_BILBOMD_ALPHAFOLD',
       'ENABLE_BILBOMD_OPENFOLD',
       'ENABLE_BILBOMD_SCOPER',
+      'ENABLE_BILBOMD_CARBONARA',
       'ENABLE_HOME_PAGE_ALERT',
       'ENABLE_CHARMM_ENGINE',
       'ORCID_AUTH_ENABLED'
@@ -89,6 +90,7 @@ export const getConfigsStuff = async (
       enableBilboMdAlphaFold: process.env.ENABLE_BILBOMD_ALPHAFOLD || 'false',
       enableBilboMdOpenfold: process.env.ENABLE_BILBOMD_OPENFOLD || 'false',
       enableBilboMdScoper: process.env.ENABLE_BILBOMD_SCOPER || 'false',
+      enableBilboMdCarbonara: process.env.ENABLE_BILBOMD_CARBONARA || 'false',
       enableHomePageAlert: process.env.ENABLE_HOME_PAGE_ALERT || 'false',
       enableCharmmEngine: process.env.ENABLE_CHARMM_ENGINE || 'true',
       orcidAuthEnabled: process.env.ORCID_AUTH_ENABLED || 'false',

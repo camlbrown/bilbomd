@@ -103,6 +103,26 @@ export const config = {
     AlphaFoldEnabled: toBoolean(process.env.ENABLE_BILBOMD_ALPHAFOLD),
     OpenFoldEnabled: toBoolean(process.env.ENABLE_BILBOMD_OPENFOLD),
     MultiEnabled: toBoolean(process.env.ENABLE_BILBOMD_MULTI),
-    ScoperEnabled: toBoolean(process.env.ENABLE_BILBOMD_SCOPER)
+    ScoperEnabled: toBoolean(process.env.ENABLE_BILBOMD_SCOPER),
+    CarbonaraEnabled: toBoolean(process.env.ENABLE_BILBOMD_CARBONARA)
+  },
+  // Local Carbonara container-backed worker settings. All have safe defaults so
+  // they never trip the required-env validation above; override per deployment.
+  carbonara: {
+    containerBin: getEnvVarWithDefault('CARBONARA_CONTAINER_BIN', 'podman'),
+    image: getEnvVarWithDefault(
+      'CARBONARA_IMAGE',
+      'carbonara-allatom-runtime:dev'
+    ),
+    // In-container path to the Carbonara checkout (carbonara_root in job.json).
+    carbonaraRoot: getEnvVarWithDefault('CARBONARA_ROOT', '/opt/carbonara'),
+    // In-container path to the BilboMD wrapper entry point.
+    runnerPath: getEnvVarWithDefault(
+      'CARBONARA_RUNNER',
+      '/opt/carbonara/carbonara_bilbomd_runner_refined.py'
+    ),
+    // In-container python used to launch the wrapper.
+    pythonBin: getEnvVarWithDefault('CARBONARA_PYTHON_BIN', 'python'),
+    timeoutMs: parsePositiveIntEnv('CARBONARA_TIMEOUT_MS', 6 * 60 * 60 * 1000)
   }
 }

@@ -44,7 +44,8 @@ export const config = {
     SANSEnabled: toBoolean(process.env.ENABLE_BILBOMD_SANS),
     AlphaFoldEnabled: toBoolean(process.env.ENABLE_BILBOMD_ALPHAFOLD),
     MultiEnabled: toBoolean(process.env.ENABLE_BILBOMD_MULTI),
-    ScoperEnabled: toBoolean(process.env.ENABLE_BILBOMD_SCOPER)
+    ScoperEnabled: toBoolean(process.env.ENABLE_BILBOMD_SCOPER),
+    CarbonaraEnabled: toBoolean(process.env.ENABLE_BILBOMD_CARBONARA)
   },
   orcidAuthEnabled: toBoolean(process.env.ORCID_AUTH_ENABLED)
 }

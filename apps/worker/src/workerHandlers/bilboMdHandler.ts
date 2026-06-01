@@ -8,6 +8,7 @@ import { processBilboMDCRDJob } from '../services/pipelines/bilbomd-crd.js'
 import { processBilboMDJobNersc } from '../services/pipelines/bilbomd-nersc.js'
 import { processBilboMDPDBJob } from '../services/pipelines/bilbomd-pdb.js'
 import { processBilboMDSANSJob } from '../services/pipelines/bilbomd-sans.js'
+import { processBilboMDCarbonaraJob } from '../services/pipelines/bilbomd-carbonara.js'
 import { WorkerJob } from '../types/jobtypes.js'
 
 type PipelineExecutor = (job: Job<WorkerJob>) => Promise<void>
@@ -22,7 +23,8 @@ const getPipelineExecutor = (
     auto: runOnNERSC ? processBilboMDJobNersc : processBilboMDAutoJob,
     alphafold: runOnNERSC ? processBilboMDJobNersc : processBilboMDAlphaFoldJob,
     openfold: processBilboMDOpenFoldJob,
-    sans: runOnNERSC ? processBilboMDJobNersc : processBilboMDSANSJob
+    sans: runOnNERSC ? processBilboMDJobNersc : processBilboMDSANSJob,
+    carbonara: processBilboMDCarbonaraJob
   }
   return pipelines[type] ?? null
 }

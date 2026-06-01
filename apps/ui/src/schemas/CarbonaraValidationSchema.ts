@@ -1,0 +1,63 @@
+import { object, string, number } from 'yup'
+import {
+  requiredFile,
+  pdbOrCifExtTest,
+  pdbOrCifChainIdCheck,
+  pdbOrCifResidueCheck,
+  fileSizeTest,
+  fileNameLengthTest,
+  noSpacesTest,
+  saxsCheck,
+  fileExtTest
+} from './fieldTests/fieldTests'
+
+// Phase-1 Carbonara form validation: structure + SAXS plus coarse-grained
+// fitting controls. Mirrors the backend carbonaraJobSchema.
+export const bilbomdCarbonaraJobSchema = object().shape({
+  title: string()
+    .required('Please provide a title for your BilboMD Carbonara Job.')
+    .min(4, 'Title must contain at least 4 characters.')
+    .max(30, 'Title must contain less than 30 characters.')
+    .matches(/^[\w\s-]+$/, 'No special characters allowed'),
+  pdb_file: requiredFile('A PDB or CIF file is required')
+    .concat(pdbOrCifChainIdCheck())
+    .concat(pdbOrCifResidueCheck())
+    .concat(pdbOrCifExtTest())
+    .concat(fileSizeTest(10_000_000))
+    .concat(noSpacesTest())
+    .concat(fileNameLengthTest()),
+  dat_file: requiredFile('Experimental SAXS data is required')
+    .concat(saxsCheck())
+    .concat(fileExtTest('dat'))
+    .concat(fileSizeTest(2_000_000))
+    .concat(noSpacesTest())
+    .concat(fileNameLengthTest()),
+  fit_n_times: number()
+    .typeError('Number of fits must be a number')
+    .integer('Number of fits must be an integer')
+    .min(1, 'At least 1 fit is required')
+    .max(100, 'No more than 100 fits')
+    .required('Number of fits is required'),
+  min_q: number()
+    .typeError('q min must be a number')
+    .min(0, 'q min must be >= 0')
+    .required('q min is required'),
+  max_q: number()
+    .typeError('q max must be a number')
+    .min(0, 'q max must be >= 0')
+    .required('q max is required')
+    .test(
+      'max-greater-than-min',
+      'q max must be greater than q min',
+      function (value) {
+        const { min_q } = this.parent
+        if (value == null || min_q == null) return true
+        return value > min_q
+      }
+    ),
+  max_fit_steps: number()
+    .typeError('Max fitting steps must be a number')
+    .integer('Max fitting steps must be an integer')
+    .min(1, 'At least 1 step is required')
+    .required('Max fitting steps is required')
+})

@@ -18,6 +18,7 @@ export type JobType =
   | 'openfold'
   | 'sans'
   | 'scoper'
+  | 'carbonara'
   | 'multi'
 
 export type MDEngine = 'CHARMM' | 'OpenMM'
@@ -143,6 +144,17 @@ export interface BilboMDScoperDTO extends BaseJobDTO {
   foxs_top_file?: string
 }
 
+export interface BilboMDCarbonaraDTO extends BaseJobDTO {
+  pdb_file: string
+  fit_n_times: number
+  min_q: number
+  max_q: number
+  max_q_start: number
+  max_fit_steps: number
+  mixture_n: number
+  rotation?: boolean
+}
+
 export interface BilboMDMultiDTO extends BaseJobDTO {
   bilbomd_uuids: string[]
   data_file_from: string
@@ -157,6 +169,7 @@ export type BilboMDMongoJobDTO =
   | BilboMDOpenFoldDTO
   | BilboMDSANSDTO
   | BilboMDScoperDTO
+  | BilboMDCarbonaraDTO
   | BilboMDMultiDTO
 
 export interface BilboMDJobDTO {

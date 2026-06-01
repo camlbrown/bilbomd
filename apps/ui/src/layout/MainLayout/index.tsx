@@ -57,6 +57,8 @@ export default function ClippedDrawer() {
   const enableBilboMdMulti = config.enableBilboMdMulti?.toLowerCase() === 'true'
   const enableBilboMdScoper =
     config.enableBilboMdScoper?.toLowerCase() === 'true'
+  const enableBilboMdCarbonara =
+    config.enableBilboMdCarbonara?.toLowerCase() === 'true'
 
   const navigationGroup = [
     {
@@ -117,11 +119,21 @@ export default function ClippedDrawer() {
       path: '/dashboard/jobs/scoper',
       onclick: () => navigate('dashboard/jobs/scoper'),
       roles: ['user', 'manager']
+    },
+    {
+      text: 'Carbonara',
+      icon: <AddCircleOutlineOutlined />,
+      path: '/dashboard/jobs/carbonara',
+      onclick: () => navigate('dashboard/jobs/carbonara'),
+      roles: ['user', 'manager']
     }
   ]
 
   if (useNersc || !enableBilboMdScoper) {
     jobFormsGroup = jobFormsGroup.filter((item) => item.text !== 'Scoper')
+  }
+  if (!enableBilboMdCarbonara) {
+    jobFormsGroup = jobFormsGroup.filter((item) => item.text !== 'Carbonara')
   }
   if (useNersc) {
     jobFormsGroup = jobFormsGroup.filter((item) => item.text !== 'BilboMD OF3')

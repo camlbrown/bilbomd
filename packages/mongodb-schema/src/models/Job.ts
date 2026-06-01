@@ -11,6 +11,7 @@ import {
   IBilboMDAlphaFoldJob,
   IBilboMDOpenFoldJob,
   IBilboMDSANSJob,
+  IBilboMDCarbonaraJob,
   IAlphaFoldEntity,
   IOpenFoldEntity,
   IFeedbackData,
@@ -346,6 +347,17 @@ const bilboMdScoperJobSchema = new Schema<IBilboMDScoperJob>({
   fixc1c2: { type: Boolean, required: true }
 })
 
+const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
+  pdb_file: { type: String, required: true },
+  fit_n_times: { type: Number, required: true, default: 4 },
+  min_q: { type: Number, required: true, default: 0.01 },
+  max_q: { type: Number, required: true, default: 0.2 },
+  max_q_start: { type: Number, required: true, default: 0.2 },
+  max_fit_steps: { type: Number, required: true, default: 1000 },
+  mixture_n: { type: Number, required: true, default: 1 },
+  rotation: { type: Boolean, required: false, default: false }
+})
+
 jobSchema.index({ uuid: 1 })
 jobSchema.index({ client_ip_hash: 1, access_mode: 1, status: 1 })
 
@@ -367,6 +379,10 @@ const BilboMdScoperJob = Job.discriminator(
   'BilboMdScoper',
   bilboMdScoperJobSchema
 )
+const BilboMdCarbonaraJob = Job.discriminator(
+  'BilboMdCarbonara',
+  bilboMdCarbonaraJobSchema
+)
 
 export {
   Job,
@@ -378,6 +394,7 @@ export {
   BilboMdAlphaFoldJob,
   BilboMdOpenFoldJob,
   BilboMdSANSJob,
+  BilboMdCarbonaraJob,
   nerscInfoSchema,
   mdConstraintsSchema,
   fixedBodySchema,

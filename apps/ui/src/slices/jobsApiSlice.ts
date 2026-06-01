@@ -191,6 +191,14 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: [{ type: 'Job', id: 'LIST' }]
     }),
+    addNewCarbonaraJob: builder.mutation<JobCreationResponse, FormData>({
+      query: (newJob) => ({
+        url: '/jobs/bilbomd-carbonara',
+        method: 'POST',
+        body: newJob
+      }),
+      invalidatesTags: [{ type: 'Job', id: 'LIST' }]
+    }),
     addNewMultiJob: builder.mutation<JobCreationResponse, FormData>({
       query: (newJob) => ({
         url: '/jobs/bilbomd-multi',
@@ -256,6 +264,7 @@ export const {
   useAddNewOpenFoldJobMutation,
   useAddNewSANSJobMutation,
   useAddNewScoperJobMutation,
+  useAddNewCarbonaraJobMutation,
   useAddNewMultiJobMutation,
   useAf2PaeJiffyMutation,
   useGetAf2PaeConstFileQuery,

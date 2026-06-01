@@ -30,6 +30,11 @@ interface BilboMDSANSJob extends Job {
   data: { type: string; title: string; uuid: string; jobid: string }
   id: string
 }
+interface BilboMDCarbonaraJob extends Job {
+  type: 'carbonara'
+  data: { type: string; title: string; uuid: string; jobid: string }
+  id: string
+}
 interface BilboMDMultiJob extends Job {
   type: 'multimd'
   data: { type: string; title: string; uuid: string; jobid: string }
@@ -48,5 +53,6 @@ type WorkerJob =
   | BilboMDAlphaFoldJob
   | BilboMDOpenFoldJob
   | BilboMDSANSJob
+  | BilboMDCarbonaraJob
   | Pdb2CrdJob
   | BilboMDMultiJob
