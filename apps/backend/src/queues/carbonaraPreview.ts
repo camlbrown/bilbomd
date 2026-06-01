@@ -14,7 +14,13 @@ let carbonaraPreviewQueue: Queue
 const getQueue = (): Queue => {
   if (!carbonaraPreviewQueue) {
     carbonaraPreviewQueue = new Queue('carbonara-preview', {
-      connection: redis
+      connection: redis,
+      // Previews are ephemeral — the UI reads result.json, not the BullMQ
+      // record — so prune jobs to avoid accumulating Redis keys.
+      defaultJobOptions: {
+        removeOnComplete: true,
+        removeOnFail: 20
+      }
     })
   }
   return carbonaraPreviewQueue

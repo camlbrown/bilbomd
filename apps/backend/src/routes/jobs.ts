@@ -43,6 +43,12 @@ router.use((req, res, next) => {
 
 router.route('/').get(getAllJobs).post(createNewJob)
 
+// B5: Carbonara initial scattering check (preview queue — no Mongo model).
+// MUST be registered before the generic '/:id' and '/:id/:filename' routes,
+// otherwise GET /carbonara-initfoxs/:id is shadowed by '/:id/:filename'.
+router.route('/carbonara-initfoxs').post(createCarbonaraInitFoxs)
+router.route('/carbonara-initfoxs/:id').get(getCarbonaraInitFoxs)
+
 router.route('/:id').get(getJobById)
 router.route('/:id').delete(deleteJob)
 router.route('/:id/results').get(downloadJobResults)
@@ -62,8 +68,5 @@ router.route('/bilbomd-openfold').post(createNewJob)
 router.route('/bilbomd-sans').post(createSANSJob)
 router.route('/bilbomd-carbonara').post(createCarbonaraJob)
 router.route('/bilbomd-multi').post(createNewMultiJob)
-// B5: Carbonara initial scattering check (preview queue — no Mongo model)
-router.route('/carbonara-initfoxs').post(createCarbonaraInitFoxs)
-router.route('/carbonara-initfoxs/:id').get(getCarbonaraInitFoxs)
 
 export default router

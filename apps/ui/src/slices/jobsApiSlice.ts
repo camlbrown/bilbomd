@@ -44,6 +44,8 @@ interface CarbonaraInitFoxsResponse {
 interface CarbonaraPreviewResult {
   status: 'pending' | 'done' | 'error'
   chi2?: number
+  c1?: number
+  c2?: number
   foxs?: { q: number; exp: number; model: number; error: number }[]
   message?: string
 }

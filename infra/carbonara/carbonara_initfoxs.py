@@ -37,37 +37,21 @@ from pathlib import Path
 
 def _convert_cif_to_pdb(cif_path: Path, out_pdb: Path) -> None:
     """
-    Convert a CIF/mmCIF file to PDB format.
+    Convert a CIF/mmCIF file to PDB using openmm.app (fast, ~0.1s).
 
-    Strategy:
-    1. Try CarbonaraDataTools._convert_cif_to_pdb_for_foxs (Carbonara helper).
-    2. Fall back to openmm.app PDBxFile -> PDBFile (always present in image).
+    NOTE: we deliberately do NOT import CarbonaraDataTools here. CDT pulls in
+    torch/biobox/openmm and takes tens of seconds to import, which previously made
+    the preview exceed the UI poll timeout (~60s). FoXS only needs coordinates, so
+    openmm.app PDBxFile -> PDBFile is sufficient and effectively instant.
     """
-    # Strategy 1: Carbonara helper (preferred — same conversion used internally)
-    try:
-        import CarbonaraDataTools as cdt  # type: ignore[import-untyped]
-        if hasattr(cdt, '_convert_cif_to_pdb_for_foxs'):
-            cdt._convert_cif_to_pdb_for_foxs(str(cif_path), str(out_pdb))
-            if out_pdb.exists() and out_pdb.stat().st_size > 0:
-                return
-    except Exception:
-        pass
-
-    # Strategy 2: openmm PDBxFile -> PDBFile
-    try:
-        from openmm.app import PDBxFile, PDBFile  # type: ignore[import-untyped]
-        pdbx = PDBxFile(str(cif_path))
-        with open(str(out_pdb), 'w') as fh:
-            PDBFile.writeFile(pdbx.topology, pdbx.positions, fh)
-        if out_pdb.exists() and out_pdb.stat().st_size > 0:
-            return
-    except Exception:
-        pass
-
-    raise RuntimeError(
-        f'Could not convert CIF to PDB: {cif_path}. '
-        'Neither CarbonaraDataTools nor openmm.app was able to convert it.'
-    )
+    from openmm.app import PDBxFile, PDBFile  # type: ignore[import-untyped]
+    pdbx = PDBxFile(str(cif_path))
+    with open(str(out_pdb), 'w') as fh:
+        PDBFile.writeFile(pdbx.topology, pdbx.positions, fh)
+    if not (out_pdb.exists() and out_pdb.stat().st_size > 0):
+        raise RuntimeError(
+            f'CIF -> PDB conversion produced no output for: {cif_path}'
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +59,8 @@ def _convert_cif_to_pdb(cif_path: Path, out_pdb: Path) -> None:
 # ---------------------------------------------------------------------------
 
 CHI2_RE = re.compile(r'Chi\^?2\s*=\s*([0-9.eE+\-]+)', re.IGNORECASE)
+C1_RE = re.compile(r'\bc1\s*=\s*([0-9.eE+\-]+)')
+C2_RE = re.compile(r'\bc2\s*=\s*([0-9.eE+\-]+)')
 
 
 def _parse_fit_file(fit_path: Path) -> tuple[float, list[dict]]:
@@ -194,14 +180,15 @@ def main() -> None:
             cmd += ['--max_q', str(args.max_q)]
 
         log_path = outdir / 'initfoxs.log'
-        with open(log_path, 'w') as log_fh:
-            proc = subprocess.run(
-                cmd,
-                cwd=str(outdir),
-                stdout=log_fh,
-                stderr=subprocess.STDOUT,
-                text=True
-            )
+        proc = subprocess.run(
+            cmd,
+            cwd=str(outdir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+        combined_output = proc.stdout or ''
+        log_path.write_text(combined_output)
 
         if proc.returncode != 0:
             write_error(
@@ -216,10 +203,28 @@ def main() -> None:
         fit_path = _find_fit_file(outdir, pdb_stem, dat_stem)
         chi2, foxs_rows = _parse_fit_file(fit_path)
 
+        # Parse c1/c2 from pyfoxs stdout
+        c1: float | None = None
+        c2: float | None = None
+        m1 = C1_RE.search(combined_output)
+        if m1:
+            try:
+                c1 = float(m1.group(1))
+            except ValueError:
+                pass
+        m2 = C2_RE.search(combined_output)
+        if m2:
+            try:
+                c2 = float(m2.group(1))
+            except ValueError:
+                pass
+
         # Step 4: write result.json
         payload = {
             'status': 'done',
             'chi2': chi2,
+            'c1': c1,
+            'c2': c2,
             'foxs': foxs_rows
         }
         result_json.write_text(json.dumps(payload))
