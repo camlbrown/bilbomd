@@ -360,7 +360,8 @@ const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
   do_foxs: { type: Boolean, default: true },
   pae_file: { type: String, required: false },
   alphafold_flex: { type: Boolean, default: false },
-  pae_flex_threshold: { type: Number, default: 16.0 }
+  pae_flex_threshold: { type: Number, default: 16.0 },
+  constraints_file: { type: String, required: false }
 })
 
 jobSchema.index({ uuid: 1 })

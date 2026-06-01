@@ -86,5 +86,37 @@ export const carbonaraJobSchema = yup.object({
         .concat(noShellMetacharsTest())
         .concat(fileNameLengthTest()),
     otherwise: (s) => s.optional()
-  })
+  }),
+  // Optional distance-constraints file (.dat or .txt). All constraints are
+  // optional for every pathway; when absent the job runs without constraints.
+  constraints_file: yup
+    .mixed()
+    .test(
+      'constraints-file-optional',
+      'Invalid constraints file',
+      function (value) {
+        if (value === undefined || value === null) return true
+        const file = value as { size?: number; originalname?: string }
+        if (!file.originalname) return true
+        if (file.size !== undefined && file.size > 1_000_000) {
+          return this.createError({ message: 'Constraints file must be < 1 MB' })
+        }
+        const name = file.originalname.toLowerCase()
+        if (/\s/.test(name)) {
+          return this.createError({
+            message: 'Constraints file name must not contain spaces'
+          })
+        }
+        if (name.length > 100) {
+          return this.createError({ message: 'Constraints file name too long' })
+        }
+        if (!/\.(dat|txt)$/.test(name)) {
+          return this.createError({
+            message: 'Constraints file must have a .dat or .txt extension'
+          })
+        }
+        return true
+      }
+    )
+    .optional()
 })

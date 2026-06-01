@@ -15,6 +15,7 @@ interface IBilboMDCarbonaraJob extends IJob {
   pae_file?: string
   alphafold_flex?: boolean
   pae_flex_threshold?: number
+  constraints_file?: string
 }
 
 export { IBilboMDCarbonaraJob }

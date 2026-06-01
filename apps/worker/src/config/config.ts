@@ -134,6 +134,9 @@ export const config = {
     backmapTimeoutMs: parsePositiveIntEnv(
       'CARBONARA_BACKMAP_TIMEOUT_MS',
       60 * 60 * 1000
-    )
+    ),
+    // Optional host path to bind-mount over the in-container wrapper for local
+    // dev iteration without an image rebuild. Empty string = no mount (prod).
+    runnerMount: getEnvVarWithDefault('CARBONARA_RUNNER_MOUNT', '')
   }
 }

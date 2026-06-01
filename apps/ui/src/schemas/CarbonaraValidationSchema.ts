@@ -78,5 +78,35 @@ export const bilbomdCarbonaraJobSchema = object().shape({
         .concat(noSpacesTest())
         .concat(fileNameLengthTest()),
     otherwise: (s) => s.optional()
-  })
+  }),
+  // Optional distance-constraints file — all validation is optional
+  constraints_file: mixed()
+    .test(
+      'constraints-file-optional',
+      'Invalid constraints file',
+      function (value) {
+        if (!value) return true
+        const file = value as { size?: number; name?: string }
+        if (!file.name) return true
+        if (file.size !== undefined && file.size > 1_000_000) {
+          return this.createError({ message: 'Constraints file must be < 1 MB' })
+        }
+        const name = file.name.toLowerCase()
+        if (/\s/.test(name)) {
+          return this.createError({
+            message: 'Constraints file name must not contain spaces'
+          })
+        }
+        if (name.length > 100) {
+          return this.createError({ message: 'Constraints file name too long' })
+        }
+        if (!/\.(dat|txt)$/.test(name)) {
+          return this.createError({
+            message: 'Constraints file must have a .dat or .txt extension'
+          })
+        }
+        return true
+      }
+    )
+    .optional()
 })

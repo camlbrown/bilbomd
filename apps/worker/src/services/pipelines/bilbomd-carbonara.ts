@@ -72,6 +72,14 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         throw new Error(`Carbonara PAE file not found: ${paePath}`)
       }
     }
+    if (foundJob.constraints_file) {
+      const constraintsPath = path.join(workDir, foundJob.constraints_file)
+      if (!(await fs.pathExists(constraintsPath))) {
+        throw new Error(
+          `Carbonara constraints file not found: ${constraintsPath}`
+        )
+      }
+    }
     await MQjob.log('end carbonara-validate')
     await progress.update(15)
 
@@ -93,7 +101,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       },
       alphaFoldFlex: foundJob.alphafold_flex,
       paeFileName: foundJob.pae_file,
-      paeFlexThreshold: foundJob.pae_flex_threshold
+      paeFlexThreshold: foundJob.pae_flex_threshold,
+      constraintsFileName: foundJob.constraints_file
     })
     const jobJsonPath = path.join(workDir, 'job.json')
     await fs.writeJson(jobJsonPath, jobJson, { spaces: 2 })
@@ -111,7 +120,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       image: config.carbonara.image,
       hostJobDir: workDir,
       runnerPath: config.carbonara.runnerPath,
-      pythonBin: config.carbonara.pythonBin
+      pythonBin: config.carbonara.pythonBin,
+      runnerMountHost: config.carbonara.runnerMount || undefined
     })
     logger.info(
       `Carbonara container: ${config.carbonara.containerBin} ${args.join(' ')}`

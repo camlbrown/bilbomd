@@ -135,6 +135,44 @@ describe('buildCarbonaraJobJson', () => {
       ].sort()
     )
   })
+
+  // B6: constraints_file
+  it('emits constraints_file as in-container path when constraintsFileName is set', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'constrained-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      constraintsFileName: 'constraints.dat'
+    })
+    expect(json.parameters.constraints_file).toBe(
+      `${CARBONARA_JOB_MOUNT}/constraints.dat`
+    )
+  })
+
+  it('does NOT emit constraints_file when constraintsFileName is absent (no-constraints regression)', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'no-constraints-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams
+    })
+    expect(json.parameters).not.toHaveProperty('constraints_file')
+    // exact same keys as Phase-1 output
+    expect(Object.keys(json.parameters).sort()).toEqual(
+      [
+        'fit_n_times',
+        'min_q',
+        'max_q',
+        'max_q_start',
+        'max_fit_steps',
+        'mixture_n',
+        'rotation'
+      ].sort()
+    )
+  })
 })
 
 describe('buildCarbonaraContainerArgs', () => {
@@ -170,6 +208,52 @@ describe('buildCarbonaraContainerArgs', () => {
     })
     expect(args).toContain('/job/custom.json')
     expect(args[args.indexOf('--job-json') + 1]).toBe('/job/custom.json')
+  })
+
+  // 2a runner mount: CARBONARA_RUNNER_MOUNT dev workflow
+  it('inserts runnerMount bind before image when runnerMountHost is set', () => {
+    const runnerPath = '/opt/carbonara/carbonara_bilbomd_runner_refined.py'
+    const args = buildCarbonaraContainerArgs({
+      image: 'carbonara-allatom-runtime:dev',
+      hostJobDir: '/data/jobs/uuid',
+      runnerPath,
+      pythonBin: 'python',
+      runnerMountHost: '/home/user/carbonara/carbonara_bilbomd_runner_refined.py'
+    })
+    // job mount
+    expect(args[2]).toBe('-v')
+    expect(args[3]).toBe(`/data/jobs/uuid:${CARBONARA_JOB_MOUNT}:Z`)
+    // runner mount inserted before image
+    expect(args[4]).toBe('-v')
+    expect(args[5]).toBe(
+      `/home/user/carbonara/carbonara_bilbomd_runner_refined.py:${runnerPath}:ro,Z`
+    )
+    // image is next
+    expect(args[6]).toBe('carbonara-allatom-runtime:dev')
+    // runner path argument is still the in-container path
+    expect(args[8]).toBe(runnerPath)
+  })
+
+  it('does NOT insert runnerMount when runnerMountHost is empty string', () => {
+    const args = buildCarbonaraContainerArgs({
+      image: 'img',
+      hostJobDir: '/data/jobs/uuid',
+      runnerPath: '/opt/carbonara/runner.py',
+      pythonBin: 'python',
+      runnerMountHost: ''
+    })
+    // empty string: no extra -v; image immediately after job-mount -v pair
+    expect(args[4]).toBe('img')
+  })
+
+  it('does NOT insert runnerMount when runnerMountHost is absent', () => {
+    const args = buildCarbonaraContainerArgs({
+      image: 'img',
+      hostJobDir: '/data/jobs/uuid',
+      runnerPath: '/opt/carbonara/runner.py',
+      pythonBin: 'python'
+    })
+    expect(args[4]).toBe('img')
   })
 })
 

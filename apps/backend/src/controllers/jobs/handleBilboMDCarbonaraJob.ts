@@ -8,11 +8,20 @@ import {
 } from '@bilbomd/mongodb-schema'
 import { Request, Response } from 'express'
 import path from 'path'
+import fs from 'fs-extra'
 import { ValidationError } from 'yup'
 import { getFileStats } from './utils/jobUtils.js'
 import { config } from '../../config/config.js'
 import { carbonaraJobSchema } from '../../validation/index.js'
 import { DispatchUser } from '../../types/bilbomd.js'
+
+interface ConstraintPair {
+  res1: number | string
+  chain1: string
+  res2: number | string
+  chain2: string
+  distance?: number | string
+}
 
 const uploadFolder = config.uploadDir
 
@@ -54,6 +63,7 @@ const handleBilboMDCarbonaraJob = async (
     let pdbFile = files?.['pdb_file']?.[0]
     let datFile = files?.['dat_file']?.[0]
     let paeFile = files?.['pae_file']?.[0]
+    const constraintsFileUpload = files?.['constraints_file']?.[0]
     if (!pdbFile && req.body.pdb_file) {
       pdbFile = {
         originalname: req.body.pdb_file,
@@ -79,6 +89,37 @@ const handleBilboMDCarbonaraJob = async (
     const alphafoldFlex = toBoolean(req.body.alphafold_flex)
     const paeFlexThreshold = toNumber(req.body.pae_flex_threshold, 16.0)
 
+    // Resolve constraints: method (a) uploaded file, or method (b) JSON pairs.
+    // For method (b) we write the pairs into carbonara_constraints.dat so the
+    // worker and wrapper receive a single constraints_file path in both cases.
+    const jobDir = path.join(uploadFolder, UUID)
+    let constraintsFileName: string | undefined
+    if (constraintsFileUpload) {
+      // Method (a): uploaded file — already stored by multer with lowercased name
+      constraintsFileName = constraintsFileUpload.originalname.toLowerCase()
+    } else if (req.body.constraints_pairs) {
+      // Method (b): JSON array of residue-pair objects serialised from the UI
+      try {
+        const pairs = JSON.parse(
+          req.body.constraints_pairs as string
+        ) as ConstraintPair[]
+        if (Array.isArray(pairs) && pairs.length > 0) {
+          const lines = pairs.map((p) => {
+            const dist =
+              p.distance !== undefined && p.distance !== ''
+                ? ` ${p.distance}`
+                : ''
+            return `${p.res1} ${p.chain1} ${p.res2} ${p.chain2}${dist}`
+          })
+          const outPath = path.join(jobDir, 'carbonara_constraints.dat')
+          await fs.writeFile(outPath, lines.join('\n') + '\n', 'utf8')
+          constraintsFileName = 'carbonara_constraints.dat'
+        }
+      } catch (parseErr) {
+        logger.warn(`Failed to parse constraints_pairs: ${parseErr}`)
+      }
+    }
+
     logger.info(
       `PDB File: ${pdbFile ? pdbFile.originalname.toLowerCase() : 'Not Found'}`
     )
@@ -96,6 +137,7 @@ const handleBilboMDCarbonaraJob = async (
       dat_file: datFile,
       pdb_file: pdbFile,
       pae_file: paeFile,
+      constraints_file: constraintsFileUpload,
       fit_n_times: req.body.fit_n_times,
       min_q: req.body.min_q,
       max_q: req.body.max_q,
@@ -138,6 +180,7 @@ const handleBilboMDCarbonaraJob = async (
       pdb_file: pdbFile.originalname.toLowerCase(),
       data_file: datFile.originalname.toLowerCase(),
       pae_file: paeFile ? paeFile.originalname.toLowerCase() : undefined,
+      constraints_file: constraintsFileName,
       fit_n_times: toNumber(req.body.fit_n_times, CARBONARA_DEFAULTS.fit_n_times),
       min_q: toNumber(req.body.min_q, CARBONARA_DEFAULTS.min_q),
       max_q: toNumber(req.body.max_q, CARBONARA_DEFAULTS.max_q),

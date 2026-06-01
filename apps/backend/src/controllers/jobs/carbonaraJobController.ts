@@ -32,7 +32,8 @@ const createCarbonaraJob = async (req: Request, res: Response) => {
     upload.fields([
       { name: 'pdb_file', maxCount: 1 },
       { name: 'dat_file', maxCount: 1 },
-      { name: 'pae_file', maxCount: 1 }
+      { name: 'pae_file', maxCount: 1 },
+      { name: 'constraints_file', maxCount: 1 }
     ])(req, res, async (err) => {
       if (err) {
         logger.error(`Failed to upload one or more files: ${err}`)

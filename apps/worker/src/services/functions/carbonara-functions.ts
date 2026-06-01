@@ -29,6 +29,7 @@ export interface CarbonaraJobParameters {
   alphaFoldFlex?: boolean
   pae?: string
   pae_flex_threshold?: number
+  constraints_file?: string
 }
 
 export interface CarbonaraJobJson {
@@ -53,6 +54,9 @@ export interface BuildCarbonaraJobJsonOptions {
   paeFileName?: string
   alphaFoldFlex?: boolean
   paeFlexThreshold?: number
+  // Optional constraints file basename (in job mount). When set, emits
+  // parameters.constraints_file as an in-container path.
+  constraintsFileName?: string
 }
 
 /**
@@ -84,6 +88,10 @@ export const buildCarbonaraJobJson = (
     baseParameters.pae_flex_threshold = opts.paeFlexThreshold ?? 16.0
   }
 
+  if (opts.constraintsFileName) {
+    baseParameters.constraints_file = `${CARBONARA_JOB_MOUNT}/${opts.constraintsFileName}`
+  }
+
   return {
     job_name: opts.jobName,
     carbonara_root: opts.carbonaraRoot,
@@ -103,31 +111,33 @@ export interface BuildCarbonaraContainerArgsOptions {
   jobJsonContainerPath?: string
   runnerPath: string
   pythonBin: string
+  // Optional host path to bind-mount over the in-container wrapper for local
+  // dev iteration without an image rebuild. When non-empty, inserts
+  // -v <runnerMountHost>:<runnerPath>:ro,Z before the image arg.
+  runnerMountHost?: string
 }
 
 /**
  * Build the argument vector for the container engine (e.g. podman). Matches the
  * locally validated invocation:
- *   podman run --rm -v <hostJobDir>:/job:Z <image> \
+ *   podman run --rm -v <hostJobDir>:/job:Z [runnerMount] <image> \
  *     python <runnerPath> --job-json /job/job.json --clean
+ *
+ * When opts.runnerMountHost is non-empty, an additional bind-mount is inserted
+ * before the image arg so the host wrapper overlays the baked-in copy without
+ * requiring an image rebuild (CARBONARA_RUNNER_MOUNT dev workflow).
  */
 export const buildCarbonaraContainerArgs = (
   opts: BuildCarbonaraContainerArgsOptions
 ): string[] => {
   const jobJson =
     opts.jobJsonContainerPath ?? `${CARBONARA_JOB_MOUNT}/job.json`
-  return [
-    'run',
-    '--rm',
-    '-v',
-    `${opts.hostJobDir}:${CARBONARA_JOB_MOUNT}:Z`,
-    opts.image,
-    opts.pythonBin,
-    opts.runnerPath,
-    '--job-json',
-    jobJson,
-    '--clean'
-  ]
+  const args = ['run', '--rm', '-v', `${opts.hostJobDir}:${CARBONARA_JOB_MOUNT}:Z`]
+  if (opts.runnerMountHost) {
+    args.push('-v', `${opts.runnerMountHost}:${opts.runnerPath}:ro,Z`)
+  }
+  args.push(opts.image, opts.pythonBin, opts.runnerPath, '--job-json', jobJson, '--clean')
+  return args
 }
 
 export interface CarbonaraWrapperSummary {

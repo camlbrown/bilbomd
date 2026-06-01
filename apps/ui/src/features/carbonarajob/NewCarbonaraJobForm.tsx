@@ -10,7 +10,10 @@ import {
   AccordionSummary,
   AccordionDetails,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
+  IconButton,
+  Radio,
+  RadioGroup
 } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { Form, Formik, Field, FormikHelpers } from 'formik'
@@ -18,12 +21,22 @@ import FileSelect from 'features/jobs/FileSelect'
 import { useAddNewCarbonaraJobMutation } from 'slices/jobsApiSlice'
 import SendIcon from '@mui/icons-material/Send'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import AddIcon from '@mui/icons-material/Add'
+import DeleteIcon from '@mui/icons-material/Delete'
 import { bilbomdCarbonaraJobSchema } from 'schemas/CarbonaraValidationSchema'
 import { Debug } from 'components/Debug'
 import LinearProgress from '@mui/material/LinearProgress'
 import HeaderBox from 'components/HeaderBox'
 import useTitle from 'hooks/useTitle'
 import JobSuccessAlert from 'features/jobs/JobSuccessAlert'
+
+interface ConstraintPairRow {
+  res1: string
+  chain1: string
+  res2: string
+  chain2: string
+  distance: string
+}
 
 interface CarbonaraJobFormValues {
   title: string
@@ -39,7 +52,16 @@ interface CarbonaraJobFormValues {
   pae_file: string
   alphafold_flex: boolean
   pae_flex_threshold: number
+  constraints_file: string
 }
+
+const emptyPairRow = (): ConstraintPairRow => ({
+  res1: '',
+  chain1: '',
+  res2: '',
+  chain2: '',
+  distance: ''
+})
 
 const NewCarbonaraJobForm = () => {
   useTitle('BilboMD: New Carbonara Job')
@@ -47,6 +69,10 @@ const NewCarbonaraJobForm = () => {
   const [addNewCarbonaraJob, { isSuccess, data: jobResponse }] =
     useAddNewCarbonaraJobMutation()
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // Constraints state — managed outside Formik (file/pairs are UI-only state)
+  const [constraintsMethod, setConstraintsMethod] = useState<'none' | 'file' | 'pairs'>('none')
+  const [constraintPairs, setConstraintPairs] = useState<ConstraintPairRow[]>([emptyPairRow()])
 
   const successResponse = jobResponse
     ? {
@@ -69,7 +95,8 @@ const NewCarbonaraJobForm = () => {
     do_foxs: true,
     pae_file: '',
     alphafold_flex: false,
-    pae_flex_threshold: 16
+    pae_flex_threshold: 16,
+    constraints_file: ''
   }
 
   const onSubmit = async (
@@ -92,6 +119,17 @@ const NewCarbonaraJobForm = () => {
     form.append('pae_flex_threshold', values.pae_flex_threshold.toString())
     if (values.pae_file) {
       form.append('pae_file', values.pae_file)
+    }
+    // Constraints: append only when the user has provided input
+    if (constraintsMethod === 'file' && values.constraints_file) {
+      form.append('constraints_file', values.constraints_file)
+    } else if (constraintsMethod === 'pairs') {
+      const validPairs = constraintPairs.filter(
+        (p) => p.res1 && p.chain1 && p.res2 && p.chain2
+      )
+      if (validPairs.length > 0) {
+        form.append('constraints_pairs', JSON.stringify(validPairs))
+      }
     }
     form.append('bilbomd_mode', 'carbonara')
 
@@ -506,6 +544,186 @@ const NewCarbonaraJobForm = () => {
                         />
                       </Box>
                     )}
+
+                    {/* Optional distance constraints section */}
+                    <Box sx={{ mt: 2, mb: 1 }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ mb: 0.5, fontWeight: 600 }}
+                      >
+                        Distance Constraints (optional)
+                      </Typography>
+                      <RadioGroup
+                        row
+                        value={constraintsMethod}
+                        onChange={(e) =>
+                          setConstraintsMethod(
+                            e.target.value as 'none' | 'file' | 'pairs'
+                          )
+                        }
+                      >
+                        <FormControlLabel
+                          value="none"
+                          control={<Radio size="small" />}
+                          label="None"
+                        />
+                        <FormControlLabel
+                          value="file"
+                          control={<Radio size="small" />}
+                          label="Upload file"
+                        />
+                        <FormControlLabel
+                          value="pairs"
+                          control={<Radio size="small" />}
+                          label="Enter pairs"
+                        />
+                      </RadioGroup>
+
+                      {constraintsMethod === 'file' && (
+                        <Grid sx={{ mt: 0.5 }}>
+                          <Field
+                            name="constraints_file"
+                            id="constraints-file-upload"
+                            as={FileSelect}
+                            title="Select File"
+                            disabled={isSubmitting}
+                            setFieldValue={setFieldValue}
+                            setFieldTouched={setFieldTouched}
+                            error={
+                              errors.constraints_file &&
+                              touched.constraints_file
+                            }
+                            errorMessage={
+                              errors.constraints_file
+                                ? errors.constraints_file
+                                : ''
+                            }
+                            fileType="constraints *.dat or *.txt"
+                            fileExt=".dat,.txt"
+                          />
+                        </Grid>
+                      )}
+
+                      {constraintsMethod === 'pairs' && (
+                        <Box sx={{ mt: 1 }}>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            Format: residue number, chain letter for each end of
+                            the pair; optional target distance in Å.
+                          </Typography>
+                          {constraintPairs.map((pair, idx) => (
+                            <Box
+                              key={idx}
+                              sx={{
+                                display: 'flex',
+                                gap: 1,
+                                mt: 1,
+                                alignItems: 'center'
+                              }}
+                            >
+                              <TextField
+                                label="Res 1"
+                                size="small"
+                                value={pair.res1}
+                                onChange={(e) => {
+                                  const updated = constraintPairs.map(
+                                    (p, i): ConstraintPairRow =>
+                                      i === idx ? { ...p, res1: e.target.value } : p
+                                  )
+                                  setConstraintPairs(updated)
+                                }}
+                                sx={{ width: '70px' }}
+                                disabled={isSubmitting}
+                              />
+                              <TextField
+                                label="Chain 1"
+                                size="small"
+                                value={pair.chain1}
+                                onChange={(e) => {
+                                  const updated = constraintPairs.map(
+                                    (p, i): ConstraintPairRow =>
+                                      i === idx ? { ...p, chain1: e.target.value } : p
+                                  )
+                                  setConstraintPairs(updated)
+                                }}
+                                sx={{ width: '70px' }}
+                                disabled={isSubmitting}
+                              />
+                              <TextField
+                                label="Res 2"
+                                size="small"
+                                value={pair.res2}
+                                onChange={(e) => {
+                                  const updated = constraintPairs.map(
+                                    (p, i): ConstraintPairRow =>
+                                      i === idx ? { ...p, res2: e.target.value } : p
+                                  )
+                                  setConstraintPairs(updated)
+                                }}
+                                sx={{ width: '70px' }}
+                                disabled={isSubmitting}
+                              />
+                              <TextField
+                                label="Chain 2"
+                                size="small"
+                                value={pair.chain2}
+                                onChange={(e) => {
+                                  const updated = constraintPairs.map(
+                                    (p, i): ConstraintPairRow =>
+                                      i === idx ? { ...p, chain2: e.target.value } : p
+                                  )
+                                  setConstraintPairs(updated)
+                                }}
+                                sx={{ width: '70px' }}
+                                disabled={isSubmitting}
+                              />
+                              <TextField
+                                label="Dist (Å)"
+                                size="small"
+                                value={pair.distance}
+                                onChange={(e) => {
+                                  const updated = constraintPairs.map(
+                                    (p, i): ConstraintPairRow =>
+                                      i === idx ? { ...p, distance: e.target.value } : p
+                                  )
+                                  setConstraintPairs(updated)
+                                }}
+                                sx={{ width: '80px' }}
+                                disabled={isSubmitting}
+                              />
+                              <IconButton
+                                size="small"
+                                disabled={isSubmitting || constraintPairs.length <= 1}
+                                onClick={() =>
+                                  setConstraintPairs(
+                                    constraintPairs.filter((_, i) => i !== idx)
+                                  )
+                                }
+                                aria-label="remove-pair"
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+                          ))}
+                          <Button
+                            size="small"
+                            startIcon={<AddIcon />}
+                            onClick={() =>
+                              setConstraintPairs([
+                                ...constraintPairs,
+                                emptyPairRow()
+                              ])
+                            }
+                            disabled={isSubmitting}
+                            sx={{ mt: 1 }}
+                          >
+                            Add pair
+                          </Button>
+                        </Box>
+                      )}
+                    </Box>
 
                     {isSubmitting && (
                       <Box sx={{ my: 1, width: '520px' }}>
