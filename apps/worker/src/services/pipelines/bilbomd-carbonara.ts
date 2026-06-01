@@ -102,7 +102,11 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       alphaFoldFlex: foundJob.alphafold_flex,
       paeFileName: foundJob.pae_file,
       paeFlexThreshold: foundJob.pae_flex_threshold,
-      constraintsFileName: foundJob.constraints_file
+      constraintsFileName: foundJob.constraints_file,
+      flexMode: foundJob.flex_mode,
+      flexRanges: foundJob.flex_ranges as
+        | { chain: number; ranges: number[][] }[]
+        | undefined
     })
     const jobJsonPath = path.join(workDir, 'job.json')
     await fs.writeJson(jobJsonPath, jobJson, { spaces: 2 })

@@ -16,6 +16,11 @@ interface IBilboMDCarbonaraJob extends IJob {
   alphafold_flex?: boolean
   pae_flex_threshold?: number
   constraints_file?: string
+  // B7: 3-way flexibility mode and manual residue ranges.
+  // flex_mode: 'auto' | 'pae' | 'manual' (default 'auto')
+  // flex_ranges shape: [{ chain: 1, ranges: [[start, stop], ...] }, ...]
+  flex_mode?: string
+  flex_ranges?: { chain: number; ranges: number[][] }[]
 }
 
 export { IBilboMDCarbonaraJob }

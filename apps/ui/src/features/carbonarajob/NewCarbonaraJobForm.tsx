@@ -13,7 +13,9 @@ import {
   FormControlLabel,
   IconButton,
   Radio,
-  RadioGroup
+  RadioGroup,
+  FormControl,
+  FormLabel
 } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { Form, Formik, Field, FormikHelpers } from 'formik'
@@ -36,6 +38,14 @@ interface ConstraintPairRow {
   res2: string
   chain2: string
   distance: string
+}
+
+// B7: one row in the manual flexibility range editor.
+// chain is 1-based (chain 1 = first chain in the structure).
+interface FlexRangeRow {
+  chain: string
+  start: string
+  stop: string
 }
 
 interface CarbonaraJobFormValues {
@@ -63,12 +73,19 @@ const emptyPairRow = (): ConstraintPairRow => ({
   distance: ''
 })
 
+const emptyFlexRow = (): FlexRangeRow => ({ chain: '1', start: '', stop: '' })
+
 const NewCarbonaraJobForm = () => {
   useTitle('BilboMD: New Carbonara Job')
 
   const [addNewCarbonaraJob, { isSuccess, data: jobResponse }] =
     useAddNewCarbonaraJobMutation()
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // B7: 3-way flexibility mode selector (replaces the PAE checkbox)
+  const [flexMode, setFlexMode] = useState<'auto' | 'pae' | 'manual'>('auto')
+  // Manual flexibility rows: chain (1-based), start residue, stop residue
+  const [flexRangeRows, setFlexRangeRows] = useState<FlexRangeRow[]>([emptyFlexRow()])
 
   // Constraints state — managed outside Formik (file/pairs are UI-only state)
   const [constraintsMethod, setConstraintsMethod] = useState<'none' | 'file' | 'pairs'>('none')
@@ -115,11 +132,41 @@ const NewCarbonaraJobForm = () => {
     form.append('rotation', values.rotation.toString())
     form.append('all_atom', values.all_atom.toString())
     form.append('do_foxs', values.do_foxs.toString())
-    form.append('alphafold_flex', values.alphafold_flex.toString())
-    form.append('pae_flex_threshold', values.pae_flex_threshold.toString())
-    if (values.pae_file) {
-      form.append('pae_file', values.pae_file)
+
+    // B7: emit flex_mode and mode-specific data
+    form.append('flex_mode', flexMode)
+    if (flexMode === 'pae') {
+      form.append('alphafold_flex', 'true')
+      form.append('pae_flex_threshold', values.pae_flex_threshold.toString())
+      if (values.pae_file) {
+        form.append('pae_file', values.pae_file)
+      }
+    } else if (flexMode === 'manual') {
+      form.append('alphafold_flex', 'false')
+      // Group valid rows by chain into [{chain, ranges:[...]}] format
+      const validRows = flexRangeRows.filter(
+        (r) => r.chain && r.start && r.stop
+      )
+      if (validRows.length > 0) {
+        const byChain: Record<number, number[][]> = {}
+        for (const row of validRows) {
+          const chain = parseInt(row.chain, 10)
+          const start = parseInt(row.start, 10)
+          const stop = parseInt(row.stop, 10)
+          if (!byChain[chain]) byChain[chain] = []
+          byChain[chain].push([start, stop])
+        }
+        const flexRanges = Object.entries(byChain).map(([chain, ranges]) => ({
+          chain: parseInt(chain, 10),
+          ranges
+        }))
+        form.append('flex_ranges', JSON.stringify(flexRanges))
+      }
+    } else {
+      // auto
+      form.append('alphafold_flex', 'false')
     }
+
     // Constraints: append only when the user has provided input
     if (constraintsMethod === 'file' && values.constraints_file) {
       form.append('constraints_file', values.constraints_file)
@@ -459,91 +506,187 @@ const NewCarbonaraJobForm = () => {
                       </Box>
                     )}
 
-                    <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-                      <Field name="alphafold_flex">
-                        {({
-                          field
-                        }: {
-                          field: {
-                            name: string
-                            value: boolean
-                            onChange: (
-                              e: React.ChangeEvent<HTMLInputElement>
-                            ) => void
+                    {/* B7: 3-way flexibility mode selector */}
+                    <Box sx={{ mt: 2, mb: 1 }}>
+                      <FormControl component="fieldset">
+                        <FormLabel
+                          component="legend"
+                          sx={{ fontWeight: 600, fontSize: '0.875rem', mb: 0.5 }}
+                        >
+                          Flexibility mode
+                        </FormLabel>
+                        <RadioGroup
+                          row
+                          value={flexMode}
+                          onChange={(e) =>
+                            setFlexMode(e.target.value as 'auto' | 'pae' | 'manual')
                           }
-                        }) => (
+                        >
                           <FormControlLabel
-                            control={
-                              <Checkbox
-                                checked={field.value}
-                                onChange={field.onChange}
-                                name={field.name}
-                                disabled={isSubmitting}
-                                slotProps={{
-                                  input: {
-                                    'aria-label': 'alphafold-flex-checkbox'
-                                  }
-                                }}
-                              />
-                            }
-                            label="Use AlphaFold PAE flexibility"
-                          />
-                        )}
-                      </Field>
-                    </Box>
-
-                    {values.alphafold_flex && (
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 1,
-                          ml: 3,
-                          mt: 0.5
-                        }}
-                      >
-                        <Grid>
-                          <Field
-                            name="pae_file"
-                            id="pae-file-upload"
-                            as={FileSelect}
-                            title="Select File"
+                            value="auto"
+                            control={<Radio size="small" />}
+                            label="Auto (default)"
                             disabled={isSubmitting}
-                            setFieldValue={setFieldValue}
-                            setFieldTouched={setFieldTouched}
-                            error={errors.pae_file && touched.pae_file}
-                            errorMessage={
-                              errors.pae_file ? errors.pae_file : ''
-                            }
-                            fileType="AlphaFold2 PAE *.json"
-                            fileExt=".json"
                           />
-                        </Grid>
+                          <FormControlLabel
+                            value="pae"
+                            control={<Radio size="small" />}
+                            label="AlphaFold PAE"
+                            disabled={isSubmitting}
+                          />
+                          <FormControlLabel
+                            value="manual"
+                            control={<Radio size="small" />}
+                            label="Manual ranges"
+                            disabled={isSubmitting}
+                          />
+                        </RadioGroup>
+                      </FormControl>
 
-                        <Field
-                          label="PAE flexibility threshold (Å)"
-                          name="pae_flex_threshold"
-                          id="pae_flex_threshold"
-                          type="number"
-                          disabled={isSubmitting}
-                          as={TextField}
-                          onChange={handleChange}
-                          onBlur={handleBlur}
-                          error={
-                            errors.pae_flex_threshold &&
-                            touched.pae_flex_threshold
-                          }
-                          helperText={
-                            errors.pae_flex_threshold &&
-                            touched.pae_flex_threshold
-                              ? errors.pae_flex_threshold
-                              : ''
-                          }
-                          value={values.pae_flex_threshold}
-                          sx={{ width: '260px' }}
-                        />
-                      </Box>
-                    )}
+                      {/* PAE mode: show PAE file upload + threshold */}
+                      {flexMode === 'pae' && (
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 1,
+                            ml: 3,
+                            mt: 0.5
+                          }}
+                        >
+                          <Grid>
+                            <Field
+                              name="pae_file"
+                              id="pae-file-upload"
+                              as={FileSelect}
+                              title="Select File"
+                              disabled={isSubmitting}
+                              setFieldValue={setFieldValue}
+                              setFieldTouched={setFieldTouched}
+                              error={errors.pae_file && touched.pae_file}
+                              errorMessage={
+                                errors.pae_file ? errors.pae_file : ''
+                              }
+                              fileType="AlphaFold2 PAE *.json"
+                              fileExt=".json"
+                            />
+                          </Grid>
+
+                          <Field
+                            label="PAE flexibility threshold (Å)"
+                            name="pae_flex_threshold"
+                            id="pae_flex_threshold"
+                            type="number"
+                            disabled={isSubmitting}
+                            as={TextField}
+                            onChange={handleChange}
+                            onBlur={handleBlur}
+                            error={
+                              errors.pae_flex_threshold &&
+                              touched.pae_flex_threshold
+                            }
+                            helperText={
+                              errors.pae_flex_threshold &&
+                              touched.pae_flex_threshold
+                                ? errors.pae_flex_threshold
+                                : ''
+                            }
+                            value={values.pae_flex_threshold}
+                            sx={{ width: '260px' }}
+                          />
+                        </Box>
+                      )}
+
+                      {/* Manual mode: residue range editor */}
+                      {flexMode === 'manual' && (
+                        <Box sx={{ ml: 3, mt: 0.5 }}>
+                          <Typography variant="caption" color="text.secondary">
+                            Enter flexible residue ranges (chain 1 = first chain).
+                            Start and stop are inclusive residue numbers.
+                          </Typography>
+                          {flexRangeRows.map((row, idx) => (
+                            <Box
+                              key={idx}
+                              sx={{
+                                display: 'flex',
+                                gap: 1,
+                                mt: 1,
+                                alignItems: 'center'
+                              }}
+                            >
+                              <TextField
+                                label="Chain"
+                                size="small"
+                                type="number"
+                                value={row.chain}
+                                onChange={(e) => {
+                                  const updated = flexRangeRows.map(
+                                    (r, i): FlexRangeRow =>
+                                      i === idx ? { ...r, chain: e.target.value } : r
+                                  )
+                                  setFlexRangeRows(updated)
+                                }}
+                                sx={{ width: '70px' }}
+                                disabled={isSubmitting}
+                              />
+                              <TextField
+                                label="Start"
+                                size="small"
+                                type="number"
+                                value={row.start}
+                                onChange={(e) => {
+                                  const updated = flexRangeRows.map(
+                                    (r, i): FlexRangeRow =>
+                                      i === idx ? { ...r, start: e.target.value } : r
+                                  )
+                                  setFlexRangeRows(updated)
+                                }}
+                                sx={{ width: '80px' }}
+                                disabled={isSubmitting}
+                              />
+                              <TextField
+                                label="Stop"
+                                size="small"
+                                type="number"
+                                value={row.stop}
+                                onChange={(e) => {
+                                  const updated = flexRangeRows.map(
+                                    (r, i): FlexRangeRow =>
+                                      i === idx ? { ...r, stop: e.target.value } : r
+                                  )
+                                  setFlexRangeRows(updated)
+                                }}
+                                sx={{ width: '80px' }}
+                                disabled={isSubmitting}
+                              />
+                              <IconButton
+                                size="small"
+                                disabled={isSubmitting || flexRangeRows.length <= 1}
+                                onClick={() =>
+                                  setFlexRangeRows(
+                                    flexRangeRows.filter((_, i) => i !== idx)
+                                  )
+                                }
+                                aria-label="remove-flex-range"
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+                          ))}
+                          <Button
+                            size="small"
+                            startIcon={<AddIcon />}
+                            onClick={() =>
+                              setFlexRangeRows([...flexRangeRows, emptyFlexRow()])
+                            }
+                            disabled={isSubmitting}
+                            sx={{ mt: 1 }}
+                          >
+                            Add range
+                          </Button>
+                        </Box>
+                      )}
+                    </Box>
 
                     {/* Optional distance constraints section */}
                     <Box sx={{ mt: 2, mb: 1 }}>
@@ -739,7 +882,11 @@ const NewCarbonaraJobForm = () => {
                           values.title === '' ||
                           values.pdb_file === '' ||
                           values.dat_file === '' ||
-                          (values.alphafold_flex && values.pae_file === '')
+                          (flexMode === 'pae' && values.pae_file === '') ||
+                          (flexMode === 'manual' &&
+                            flexRangeRows.filter(
+                              (r) => r.chain && r.start && r.stop
+                            ).length === 0)
                         }
                         loading={isSubmitting}
                         endIcon={<SendIcon />}

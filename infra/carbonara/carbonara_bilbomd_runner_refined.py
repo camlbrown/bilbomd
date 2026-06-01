@@ -447,6 +447,58 @@ def summarise_outputs(fitdata_dir: Path) -> dict[str, Any]:
     }
 
 
+def apply_flexibility(
+    *,
+    carbonara_root: Path,
+    run_root: Path,
+    run_name: str,
+    scenario_dir: Path,
+    pdb_path: Path,
+    flex_ranges: dict[str, list[list[int]]],
+    mixture_n: int,
+) -> None:
+    """
+    Override varyingSectionSecondary*.dat from user-supplied residue ranges.
+
+    Must be called AFTER setup (so fingerPrint1.dat already exists in
+    carbonara_runs/<run_name>/) and BEFORE apply_constraints / patch_runme.
+
+    CDT contract (verified from notebooks):
+      cdt.linker_ids_from_ranges(run_name, pdb_name, user_ranges)
+        reads RELATIVE "carbonara_runs/<run_name>/fingerPrint1.dat", so it
+        MUST run with cwd=run_root.
+      cdt.write_varysections_file(indices, working_path, carb_index=i)
+        writes working_path/varyingSectionSecondary{i}.dat.
+
+    flex_ranges from job.json is {"1": [[5,56], ...], ...} (string chain keys,
+    1-based integer chains). We normalise to {1: [(5,56), ...]}.
+    """
+    import sys
+    import os
+
+    sys.path.insert(0, str(carbonara_root))
+    import CarbonaraDataTools as cdt  # type: ignore[import-not-found]
+
+    # Normalise JSON {"1": [[5, 56]]} -> {1: [(5, 56)]}
+    user_ranges: dict[int, list[tuple[int, int]]] = {
+        int(k): [tuple(r) for r in v]  # type: ignore[misc]
+        for k, v in flex_ranges.items()
+    }
+
+    cwd = os.getcwd()
+    os.chdir(str(run_root))
+    try:
+        indices, _secs = cdt.linker_ids_from_ranges(
+            run_name, str(pdb_path), user_ranges
+        )
+        for i in range(1, max(1, mixture_n) + 1):
+            cdt.write_varysections_file(
+                indices, f"carbonara_runs/{run_name}", carb_index=i
+            )
+    finally:
+        os.chdir(cwd)
+
+
 def apply_constraints(
     *,
     carbonara_root: Path,
@@ -656,11 +708,79 @@ def main() -> int:
     require_file(run_script, "generated RunMe script")
     expose_probability_interpolation_files(carbonara_root, carbonara_run_dir)
 
+    mixture_n = int(params.get("mixture_n", 1))
+
+    # Computed step numbering: build the ordered list of optional apply phases
+    # that will actually run (flexibility -> constraints), then number the fixed
+    # phases (setup=1, patch, fit, collect) around them.
+    #   N = 3 (setup + patch + fit + collect base) + len(optional_phases)
+    # but we actually have 4 fixed phases so N = 4 + len(optional_phases).
+    optional_phases = []
+    flex_ranges_param = params.get("flex_ranges")
     constraints_file_param = params.get("constraints_file")
+    if flex_ranges_param:
+        optional_phases.append("flexibility")
     if constraints_file_param:
+        optional_phases.append("constraints")
+
+    total_steps = 4 + len(optional_phases)  # setup + optionals + patch + fit + collect
+    next_step = 2  # step 1 was setup
+
+    if "flexibility" in optional_phases:
+        step_flex = f"{next_step}/{total_steps}"
+        next_step += 1
+    else:
+        step_flex = None
+
+    if "constraints" in optional_phases:
+        step_constraints = f"{next_step}/{total_steps}"
+        next_step += 1
+    else:
+        step_constraints = None
+
+    step_patch = f"{next_step}/{total_steps}"
+    next_step += 1
+    step_fit = f"{next_step}/{total_steps}"
+    next_step += 1
+    step_collect = f"{next_step}/{total_steps}"
+
+    # --- Optional: manual flexibility (B7) ---
+    if flex_ranges_param and step_flex is not None:
+        print(f"\n[{step_flex}] Applying manual flexibility\n")
+        update_summary(summary_path, summary, status="applying_flexibility")
+        try:
+            apply_flexibility(
+                carbonara_root=carbonara_root,
+                run_root=run_root,
+                run_name=job_name,
+                scenario_dir=carbonara_run_dir,
+                pdb_path=input_pdb,
+                flex_ranges=flex_ranges_param,
+                mixture_n=mixture_n,
+            )
+        except Exception as exc:
+            print(f"\nFlexibility apply step failed: {exc}", file=sys.stderr)
+            update_summary(
+                summary_path,
+                summary,
+                status="flexibility_failed",
+                flexibility_error=str(exc),
+            )
+            collect_outputs(
+                carbonara_run_dir=carbonara_run_dir,
+                run_script=run_script if run_script.exists() else None,
+                log_file=log_file,
+                summary_path=summary_path,
+                outdir=outdir,
+                summary=summary,
+            )
+            return 1
+
+    # --- Optional: distance constraints (B6) ---
+    if constraints_file_param and step_constraints is not None:
         cf = resolve_path(constraints_file_param, job_json_dir)
         require_file(cf, "constraints file")
-        print(f"\n[2/5] Applying distance constraints from: {cf}\n")
+        print(f"\n[{step_constraints}] Applying distance constraints from: {cf}\n")
         update_summary(summary_path, summary, status="applying_constraints")
         try:
             apply_constraints(
@@ -668,7 +788,7 @@ def main() -> int:
                 scenario_dir=carbonara_run_dir,
                 run_script=run_script,
                 constraints_file=cf,
-                mixture_n=int(params.get("mixture_n", 1)),
+                mixture_n=mixture_n,
             )
         except Exception as exc:
             print(f"\nConstraints apply step failed: {exc}", file=sys.stderr)
@@ -687,13 +807,6 @@ def main() -> int:
                 summary=summary,
             )
             return 1
-        step_patch = "3/5"
-        step_fit = "4/5"
-        step_collect = "5/5"
-    else:
-        step_patch = "2/4"
-        step_fit = "3/4"
-        step_collect = "4/4"
 
     print(f"\n[{step_patch}] Patching generated run script for BilboMD background PID tracking: {run_script}\n")
     update_summary(summary_path, summary, status="patching_run_script", run_script=str(run_script))

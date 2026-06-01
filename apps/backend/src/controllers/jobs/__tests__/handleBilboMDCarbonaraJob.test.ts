@@ -346,6 +346,95 @@ describe('handleBilboMDCarbonaraJob', () => {
     })
   })
 
+  describe('B7 manual residue-range flexibility', () => {
+    it('stores flex_mode=manual and flex_ranges when provided, clears alphafold_flex', async () => {
+      const flexRanges = [{ chain: 1, ranges: [[100, 200], [300, 400]] }]
+      const { req, res } = makeReqRes({
+        flex_mode: 'manual',
+        flex_ranges: JSON.stringify(flexRanges),
+        // even if someone sends alphafold_flex=true, manual mode overrides it
+        alphafold_flex: 'true'
+      })
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.flex_mode).toBe('manual')
+      expect(data.flex_ranges).toEqual(flexRanges)
+      // mutual exclusion: manual forces alphafold_flex=false
+      expect(data.alphafold_flex).toBe(false)
+      // PAE file should not be stored in manual mode
+      expect(data.pae_file).toBeUndefined()
+    })
+
+    it('stores flex_mode=pae and alphafold_flex=true when pae mode is selected', async () => {
+      const { req, res } = makeReqRes(
+        { flex_mode: 'pae', pae_flex_threshold: '14' },
+        {
+          pdb_file: [{ originalname: 'model.pdb' }],
+          dat_file: [{ originalname: 'saxs.dat' }],
+          pae_file: [{ originalname: 'pae.json' }]
+        }
+      )
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.flex_mode).toBe('pae')
+      expect(data.alphafold_flex).toBe(true)
+      expect(data.pae_file).toBe('pae.json')
+      expect(data.flex_ranges).toBeUndefined()
+    })
+
+    it('stores flex_mode=auto and neither alphafold_flex nor flex_ranges by default', async () => {
+      const { req, res } = makeReqRes({ flex_mode: 'auto' })
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.flex_mode).toBe('auto')
+      expect(data.alphafold_flex).toBe(false)
+      expect(data.flex_ranges).toBeUndefined()
+    })
+
+    it('defaults to flex_mode=auto when flex_mode is absent', async () => {
+      const { req, res } = makeReqRes()
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.flex_mode).toBe('auto')
+    })
+  })
+
   describe('error handling', () => {
     it('returns 500 when job save throws', async () => {
       const { req, res } = makeReqRes()

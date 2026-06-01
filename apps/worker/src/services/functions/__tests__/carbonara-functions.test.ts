@@ -136,6 +136,90 @@ describe('buildCarbonaraJobJson', () => {
     )
   })
 
+  // B7: manual flexibility — flex_ranges object + no alphaFoldFlex
+  it('manual mode emits flex_ranges object and does NOT emit alphaFoldFlex', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'manual-flex-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      flexMode: 'manual',
+      flexRanges: [
+        { chain: 1, ranges: [[100, 200], [300, 400]] },
+        { chain: 2, ranges: [[50, 80]] }
+      ]
+    })
+    // flex_ranges emitted as object with string chain keys
+    expect(json.parameters.flex_ranges).toEqual({
+      '1': [[100, 200], [300, 400]],
+      '2': [[50, 80]]
+    })
+    // alphaFoldFlex must NOT be emitted in manual mode
+    expect(json.parameters).not.toHaveProperty('alphaFoldFlex')
+    expect(json.parameters).not.toHaveProperty('pae')
+    expect(json.parameters).not.toHaveProperty('pae_flex_threshold')
+  })
+
+  it('manual mode with a single chain and single range emits correctly', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'manual-single-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      flexMode: 'manual',
+      flexRanges: [{ chain: 1, ranges: [[5, 56]] }]
+    })
+    expect(json.parameters.flex_ranges).toEqual({ '1': [[5, 56]] })
+    expect(json.parameters).not.toHaveProperty('alphaFoldFlex')
+  })
+
+  it('auto mode does NOT emit flex_ranges (Phase-1 byte-identical regression)', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'auto-flex-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      flexMode: 'auto',
+      flexRanges: [{ chain: 1, ranges: [[5, 56]] }]
+    })
+    expect(json.parameters).not.toHaveProperty('flex_ranges')
+    expect(json.parameters).not.toHaveProperty('alphaFoldFlex')
+  })
+
+  it('pae mode (flexMode=pae) still emits alphaFoldFlex and NOT flex_ranges', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'pae-flex-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      flexMode: 'pae',
+      alphaFoldFlex: true,
+      paeFileName: 'pae.json',
+      paeFlexThreshold: 14,
+      flexRanges: [{ chain: 1, ranges: [[5, 56]] }]
+    })
+    expect(json.parameters.alphaFoldFlex).toBe(true)
+    expect(json.parameters.pae).toBe(`${CARBONARA_JOB_MOUNT}/pae.json`)
+    expect(json.parameters).not.toHaveProperty('flex_ranges')
+  })
+
+  it('manual mode with empty flexRanges falls through to PAE branch (no flex_ranges emitted)', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'manual-empty-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      flexMode: 'manual',
+      flexRanges: []
+    })
+    expect(json.parameters).not.toHaveProperty('flex_ranges')
+  })
+
   // B6: constraints_file
   it('emits constraints_file as in-container path when constraintsFileName is set', () => {
     const json = buildCarbonaraJobJson({

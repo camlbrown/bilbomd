@@ -30,6 +30,8 @@ export interface CarbonaraJobParameters {
   pae?: string
   pae_flex_threshold?: number
   constraints_file?: string
+  // B7: manual flexibility — object form {"1": [[start,stop],...]}
+  flex_ranges?: Record<string, number[][]>
 }
 
 export interface CarbonaraJobJson {
@@ -57,17 +59,26 @@ export interface BuildCarbonaraJobJsonOptions {
   // Optional constraints file basename (in job mount). When set, emits
   // parameters.constraints_file as an in-container path.
   constraintsFileName?: string
+  // B7: 3-way flexibility mode and manual residue ranges.
+  // When flexMode==='manual' and flexRanges has entries, emits flex_ranges as
+  // an object { "1": [[start,stop],...] } and does NOT emit alphaFoldFlex.
+  flexMode?: string
+  flexRanges?: { chain: number; ranges: number[][] }[]
 }
 
 /**
  * Build the job.json object consumed by carbonara_bilbomd_runner_refined.py.
  * Inputs are expressed as absolute in-container paths under the /job mount.
  *
- * When opts.alphaFoldFlex is true AND opts.paeFileName is set, three extra
- * keys are added to parameters so the wrapper can pass them to
- * setup_carbonara.py (--alphaFoldFlex --pae --pae_flex_threshold). When
- * alphaFoldFlex is false or paeFileName is absent, NONE of those three keys
- * are emitted, keeping Phase-1 output byte-identical.
+ * Flexibility modes (mutually exclusive — B7):
+ *   - auto (default): no extra parameters emitted (byte-identical to Phase-1).
+ *   - pae: emits alphaFoldFlex/pae/pae_flex_threshold when alphaFoldFlex is
+ *     true AND paeFileName is set.
+ *   - manual: emits parameters.flex_ranges as an object
+ *     { "<chain>": [[start,stop],...] } and does NOT emit alphaFoldFlex.
+ *
+ * When alphaFoldFlex is false or paeFileName is absent, PAE keys are not
+ * emitted, keeping Phase-1 output byte-identical.
  */
 export const buildCarbonaraJobJson = (
   opts: BuildCarbonaraJobJsonOptions
@@ -82,11 +93,22 @@ export const buildCarbonaraJobJson = (
     rotation: opts.parameters.rotation ?? false
   }
 
-  if (opts.alphaFoldFlex === true && opts.paeFileName) {
+  if (opts.flexMode === 'manual' && opts.flexRanges && opts.flexRanges.length > 0) {
+    // Manual residue-range flexibility: convert [{chain, ranges}] to
+    // {"<chain>": [[start,stop],...]} object form for the wrapper.
+    const flexRangesObj: Record<string, number[][]> = {}
+    for (const entry of opts.flexRanges) {
+      flexRangesObj[String(entry.chain)] = entry.ranges
+    }
+    baseParameters.flex_ranges = flexRangesObj
+    // Do NOT emit alphaFoldFlex in manual mode (mutual exclusion).
+  } else if (opts.alphaFoldFlex === true && opts.paeFileName) {
+    // PAE-guided flexibility: pass flags through to setup_carbonara.py.
     baseParameters.alphaFoldFlex = true
     baseParameters.pae = `${CARBONARA_JOB_MOUNT}/${opts.paeFileName}`
     baseParameters.pae_flex_threshold = opts.paeFlexThreshold ?? 16.0
   }
+  // auto mode: no extra keys emitted (Phase-1 byte-identical).
 
   if (opts.constraintsFileName) {
     baseParameters.constraints_file = `${CARBONARA_JOB_MOUNT}/${opts.constraintsFileName}`

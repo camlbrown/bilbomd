@@ -361,7 +361,16 @@ const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
   pae_file: { type: String, required: false },
   alphafold_flex: { type: Boolean, default: false },
   pae_flex_threshold: { type: Number, default: 16.0 },
-  constraints_file: { type: String, required: false }
+  constraints_file: { type: String, required: false },
+  // B7: 3-way flexibility mode (auto | pae | manual) and manual residue ranges.
+  // flex_ranges shape stored as Mixed: [{ chain: 1, ranges: [[start, stop]] }]
+  flex_mode: {
+    type: String,
+    enum: ['auto', 'pae', 'manual'],
+    default: 'auto',
+    required: false
+  },
+  flex_ranges: { type: Schema.Types.Mixed, required: false }
 })
 
 jobSchema.index({ uuid: 1 })

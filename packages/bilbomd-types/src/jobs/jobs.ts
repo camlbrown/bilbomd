@@ -159,6 +159,9 @@ export interface BilboMDCarbonaraDTO extends BaseJobDTO {
   alphafold_flex?: boolean
   pae_flex_threshold?: number
   constraints_file?: string
+  // B7: 3-way flexibility mode and manual residue ranges
+  flex_mode?: string
+  flex_ranges?: { chain: number; ranges: number[][] }[]
 }
 
 export interface BilboMDMultiDTO extends BaseJobDTO {

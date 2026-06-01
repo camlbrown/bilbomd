@@ -86,7 +86,34 @@ const handleBilboMDCarbonaraJob = async (
       } as Express.Multer.File
     }
 
-    const alphafoldFlex = toBoolean(req.body.alphafold_flex)
+    // B7: 3-way flexibility mode. Mutually exclusive:
+    //   'manual' -> store flex_ranges, force alphafold_flex=false, ignore pae_file
+    //   'pae'    -> existing PAE path (alphafold_flex=true)
+    //   'auto'   -> neither (default)
+    const flexMode: string =
+      typeof req.body.flex_mode === 'string' &&
+      ['auto', 'pae', 'manual'].includes(req.body.flex_mode)
+        ? req.body.flex_mode
+        : 'auto'
+
+    let flexRanges: { chain: number; ranges: number[][] }[] | undefined
+    if (flexMode === 'manual' && req.body.flex_ranges) {
+      try {
+        const parsed =
+          typeof req.body.flex_ranges === 'string'
+            ? JSON.parse(req.body.flex_ranges)
+            : req.body.flex_ranges
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          flexRanges = parsed as { chain: number; ranges: number[][] }[]
+        }
+      } catch (parseErr) {
+        logger.warn(`Failed to parse flex_ranges: ${parseErr}`)
+      }
+    }
+
+    // Resolve alphafold_flex based on mode (manual overrides any form value)
+    const alphafoldFlex =
+      flexMode === 'pae' ? true : flexMode === 'manual' ? false : toBoolean(req.body.alphafold_flex)
     const paeFlexThreshold = toNumber(req.body.pae_flex_threshold, 16.0)
 
     // Resolve constraints: method (a) uploaded file, or method (b) JSON pairs.
@@ -148,7 +175,9 @@ const handleBilboMDCarbonaraJob = async (
       all_atom: req.body.all_atom,
       do_foxs: req.body.do_foxs,
       alphafold_flex: alphafoldFlex,
-      pae_flex_threshold: paeFlexThreshold
+      pae_flex_threshold: paeFlexThreshold,
+      flex_mode: flexMode,
+      flex_ranges: flexRanges
     }
 
     try {
@@ -179,7 +208,13 @@ const handleBilboMDCarbonaraJob = async (
       uuid: UUID,
       pdb_file: pdbFile.originalname.toLowerCase(),
       data_file: datFile.originalname.toLowerCase(),
-      pae_file: paeFile ? paeFile.originalname.toLowerCase() : undefined,
+      // manual mode: ignore PAE file even if uploaded
+      pae_file:
+        flexMode === 'manual'
+          ? undefined
+          : paeFile
+            ? paeFile.originalname.toLowerCase()
+            : undefined,
       constraints_file: constraintsFileName,
       fit_n_times: toNumber(req.body.fit_n_times, CARBONARA_DEFAULTS.fit_n_times),
       min_q: toNumber(req.body.min_q, CARBONARA_DEFAULTS.min_q),
@@ -195,6 +230,8 @@ const handleBilboMDCarbonaraJob = async (
       do_foxs: req.body.do_foxs !== undefined ? toBoolean(req.body.do_foxs) : true,
       alphafold_flex: alphafoldFlex,
       pae_flex_threshold: paeFlexThreshold,
+      flex_mode: flexMode,
+      flex_ranges: flexMode === 'manual' ? flexRanges : undefined,
       status: 'Submitted',
       time_submitted: new Date(),
       steps,

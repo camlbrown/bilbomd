@@ -118,5 +118,63 @@ export const carbonaraJobSchema = yup.object({
         return true
       }
     )
-    .optional()
+    .optional(),
+  // B7: flex_mode selects the 3-way flexibility mode (default 'auto').
+  flex_mode: yup
+    .string()
+    .oneOf(['auto', 'pae', 'manual'], 'flex_mode must be auto, pae, or manual')
+    .optional(),
+  // flex_ranges is required when flex_mode === 'manual' and must contain at
+  // least one entry with a valid chain (integer >= 1) and non-empty ranges
+  // where each range is [start, stop] with start <= stop (integers).
+  flex_ranges: yup.mixed().when('flex_mode', {
+    is: 'manual',
+    then: (s) =>
+      s.test(
+        'flex-ranges-required-shape',
+        'flex_ranges must be a non-empty array of {chain, ranges} when flex_mode is manual',
+        function (value) {
+          if (!value || !Array.isArray(value) || value.length === 0) {
+            return this.createError({
+              message:
+                'flex_ranges is required and must be non-empty when flex_mode is manual'
+            })
+          }
+          for (const entry of value as unknown[]) {
+            const e = entry as { chain?: unknown; ranges?: unknown }
+            if (
+              typeof e.chain !== 'number' ||
+              !Number.isInteger(e.chain) ||
+              e.chain < 1
+            ) {
+              return this.createError({
+                message: 'Each flex_ranges entry must have chain as integer >= 1'
+              })
+            }
+            if (!Array.isArray(e.ranges) || e.ranges.length === 0) {
+              return this.createError({
+                message: 'Each flex_ranges entry must have a non-empty ranges array'
+              })
+            }
+            for (const r of e.ranges as unknown[]) {
+              const range = r as number[]
+              if (
+                !Array.isArray(range) ||
+                range.length !== 2 ||
+                !Number.isInteger(range[0]) ||
+                !Number.isInteger(range[1]) ||
+                range[0] > range[1]
+              ) {
+                return this.createError({
+                  message:
+                    'Each range must be [start, stop] with integer start <= stop'
+                })
+              }
+            }
+          }
+          return true
+        }
+      ),
+    otherwise: (s) => s.optional()
+  })
 })
