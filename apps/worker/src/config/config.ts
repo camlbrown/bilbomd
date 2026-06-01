@@ -137,6 +137,16 @@ export const config = {
     ),
     // Optional host path to bind-mount over the in-container wrapper for local
     // dev iteration without an image rebuild. Empty string = no mount (prod).
-    runnerMount: getEnvVarWithDefault('CARBONARA_RUNNER_MOUNT', '')
+    runnerMount: getEnvVarWithDefault('CARBONARA_RUNNER_MOUNT', ''),
+    // B5: initial scattering check helper settings.
+    // In-container path to carbonara_initfoxs.py (baked into the image).
+    initFoxsPath: getEnvVarWithDefault(
+      'CARBONARA_INITFOXS_PATH',
+      '/opt/carbonara/carbonara_initfoxs.py'
+    ),
+    // Optional host path to bind-mount the helper for local dev (like runnerMount).
+    initFoxsMount: getEnvVarWithDefault('CARBONARA_INITFOXS_MOUNT', ''),
+    // Concurrency for the dedicated carbonara-preview BullMQ worker.
+    previewConcurrency: parsePositiveIntEnv('CARBONARA_PREVIEW_CONCURRENCY', 2)
   }
 }

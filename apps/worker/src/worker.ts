@@ -13,6 +13,7 @@ import {
 import { createBilboMdWorker } from './workers/bilboMdWorker.js'
 import { createMovieWorker } from './workers/movieWorker.js'
 import { createMultiMDWorker } from './workers/multiMdWorker.js'
+import { createCarbonaraPreviewWorker } from './workers/carbonaraPreviewWorker.js'
 import { checkNERSC } from './workers/workerControl.js'
 import { monitorAndCleanupJobs } from './workers/bilboMdNerscJobMonitor.js'
 import { redis } from './queues/redisConn.js'
@@ -35,6 +36,7 @@ connectDB()
 let bilboMdWorker: Worker | null = null
 let movieWorker: Worker | null = null
 let multimdWorker: Worker | null = null
+let carbonaraPreviewWorker: Worker | null = null
 
 const workerOptions: WorkerOptions = {
   connection: redis,
@@ -55,12 +57,17 @@ const multimdWorkerOptions: WorkerOptions = {
   concurrency: WORKER_CONCURRENCY.MULTI_MD
 }
 
+const carbonaraPreviewWorkerOptions: WorkerOptions = {
+  connection: redis,
+  concurrency: config.carbonara.previewConcurrency
+}
+
 const startWorkers = async () => {
   const systemName = config.runOnNERSC ? 'NERSC' : 'Hyperion/Epyc'
   logger.info(`Attempting to start workers on ${systemName}...`)
 
   // Create workers only if they are not already initialized
-  if (!bilboMdWorker || !movieWorker || !multimdWorker) {
+  if (!bilboMdWorker || !movieWorker || !multimdWorker || !carbonaraPreviewWorker) {
     // If running on NERSC, check credentials before starting workers
     if (config.runOnNERSC) {
       logger.info('Checking NERSC credentials...')
@@ -81,6 +88,11 @@ const startWorkers = async () => {
 
     multimdWorker = createMultiMDWorker(multimdWorkerOptions)
     logger.info(`MultiMD Worker started on ${systemName}`)
+
+    carbonaraPreviewWorker = createCarbonaraPreviewWorker(
+      carbonaraPreviewWorkerOptions
+    )
+    logger.info(`Carbonara Preview Worker started on ${systemName}`)
   } else {
     logger.info('Workers are already initialized')
   }
@@ -90,7 +102,8 @@ const startWorkers = async () => {
 const workers = [
   { getWorker: () => bilboMdWorker, name: 'BilboMD Worker' },
   { getWorker: () => movieWorker, name: 'Movie Worker' },
-  { getWorker: () => multimdWorker, name: 'MultiMD Worker' }
+  { getWorker: () => multimdWorker, name: 'MultiMD Worker' },
+  { getWorker: () => carbonaraPreviewWorker, name: 'Carbonara Preview Worker' }
 ]
 
 // Store interval IDs for cleanup
@@ -169,6 +182,10 @@ const gracefulShutdown = async (signal: string) => {
     if (multimdWorker) {
       await multimdWorker.close()
       logger.info('MultiMD Worker closed')
+    }
+    if (carbonaraPreviewWorker) {
+      await carbonaraPreviewWorker.close()
+      logger.info('Carbonara Preview Worker closed')
     }
   } catch (error) {
     logger.error(`Error closing workers: ${getErrorMessage(error)}`)

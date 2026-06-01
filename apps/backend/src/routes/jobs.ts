@@ -9,6 +9,10 @@ import {
 } from '../controllers/jobs/index.js'
 import { createSANSJob } from '../controllers/jobs/sansJobController.js'
 import { createCarbonaraJob } from '../controllers/jobs/carbonaraJobController.js'
+import {
+  createCarbonaraInitFoxs,
+  getCarbonaraInitFoxs
+} from '../controllers/jobs/carbonaraInitFoxsController.js'
 import { createNewMultiJob } from '../controllers/jobs/multiMdController.js'
 import { downloadPDB, getFoxsData } from '../controllers/foxsController.js'
 import { getFile } from '../controllers/fileDownloadController.js'
@@ -58,5 +62,8 @@ router.route('/bilbomd-openfold').post(createNewJob)
 router.route('/bilbomd-sans').post(createSANSJob)
 router.route('/bilbomd-carbonara').post(createCarbonaraJob)
 router.route('/bilbomd-multi').post(createNewMultiJob)
+// B5: Carbonara initial scattering check (preview queue — no Mongo model)
+router.route('/carbonara-initfoxs').post(createCarbonaraInitFoxs)
+router.route('/carbonara-initfoxs/:id').get(getCarbonaraInitFoxs)
 
 export default router

@@ -37,6 +37,17 @@ interface Af2PaeResponse {
   [key: string]: unknown
 }
 
+interface CarbonaraInitFoxsResponse {
+  previewId: string
+}
+
+interface CarbonaraPreviewResult {
+  status: 'pending' | 'done' | 'error'
+  chi2?: number
+  foxs?: { q: number; exp: number; model: number; error: number }[]
+  message?: string
+}
+
 interface Af2PaeStatusResponse {
   status: string
   progress?: number
@@ -246,6 +257,20 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
     getMDMovies: builder.query<JobAssetsDTO, string>({
       query: (id) => ({ url: `/jobs/${id}/movies`, method: 'GET' }),
       providesTags: (_, __, id) => [{ type: 'MovieAsset', id }]
+    }),
+    // B5: Carbonara initial scattering check (preview mini-pipeline)
+    addCarbonaraInitFoxs: builder.mutation<CarbonaraInitFoxsResponse, FormData>({
+      query: (formData) => ({
+        url: '/jobs/carbonara-initfoxs',
+        method: 'POST',
+        body: formData
+      })
+    }),
+    getCarbonaraInitFoxs: builder.query<CarbonaraPreviewResult, string>({
+      query: (previewId) => ({
+        url: `/jobs/carbonara-initfoxs/${previewId}`,
+        method: 'GET'
+      })
     })
   })
 })
@@ -271,7 +296,9 @@ export const {
   useGetAf2PaeStatusQuery,
   useGetFileByIdAndNameQuery,
   useLazyGetFileByIdAndNameQuery,
-  useGetMDMoviesQuery
+  useGetMDMoviesQuery,
+  useAddCarbonaraInitFoxsMutation,
+  useLazyGetCarbonaraInitFoxsQuery
 } = jobsApiSlice
 
 // Select the query result object from the cache

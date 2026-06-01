@@ -449,6 +449,64 @@ export const buildBackmapContainerArgs = (
   opts.loopBody
 ]
 
+// ---------------------------------------------------------------------------
+// B5 — initial scattering check (carbonara-preview queue) helpers
+// ---------------------------------------------------------------------------
+
+export interface BuildInitFoxsContainerArgsOptions {
+  image: string
+  /** Absolute host directory that will be mounted at /job inside the container. */
+  hostDir: string
+  /** Basename of the PDB (or CIF, already converted) file inside hostDir. */
+  pdbFileName: string
+  /** Basename of the SAXS .dat file inside hostDir. */
+  datFileName: string
+  /** Optional maximum q value forwarded to pyfoxs via --max_q. */
+  maxQ?: number | null
+  /** Python binary to invoke inside the container. */
+  pythonBin: string
+  /** In-container path to carbonara_initfoxs.py. */
+  initFoxsPath: string
+  /** Optional host path to bind-mount over initFoxsPath for local dev.
+   *  When non-empty, inserts -v <initFoxsMount>:<initFoxsPath>:ro,Z. */
+  initFoxsMount?: string
+}
+
+/**
+ * Build the container argument vector for a carbonara-preview job.
+ * Invocation inside the container:
+ *   python <initFoxsPath> --pdb /job/<pdbFileName> --saxs /job/<datFileName>
+ *                          --outdir /job [--max_q <maxQ>]
+ *
+ * When initFoxsMount is non-empty an extra bind-mount is inserted before the
+ * image arg so the host helper overlays the baked copy (CARBONARA_INITFOXS_MOUNT
+ * dev workflow, analogous to CARBONARA_RUNNER_MOUNT).
+ */
+export const buildInitFoxsContainerArgs = (
+  opts: BuildInitFoxsContainerArgsOptions
+): string[] => {
+  const args = ['run', '--rm', '-v', `${opts.hostDir}:/job:Z`]
+
+  if (opts.initFoxsMount) {
+    args.push('-v', `${opts.initFoxsMount}:${opts.initFoxsPath}:ro,Z`)
+  }
+
+  args.push(
+    opts.image,
+    opts.pythonBin,
+    opts.initFoxsPath,
+    '--pdb', `/job/${opts.pdbFileName}`,
+    '--saxs', `/job/${opts.datFileName}`,
+    '--outdir', '/job'
+  )
+
+  if (opts.maxQ != null) {
+    args.push('--max_q', String(opts.maxQ))
+  }
+
+  return args
+}
+
 export interface RunCarbonaraContainerOptions {
   containerBin: string
   args: string[]

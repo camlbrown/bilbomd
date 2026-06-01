@@ -10,7 +10,8 @@ import {
   buildBackmapLoopCommand,
   buildBackmapContainerArgs,
   parseFoxsResultsSummary,
-  selectBestAaModel
+  selectBestAaModel,
+  buildInitFoxsContainerArgs
 } from '../carbonara-functions.js'
 
 const baseParams = {
@@ -732,5 +733,96 @@ describe('selectBestAaModel', () => {
 
   it('returns null for an empty array', () => {
     expect(selectBestAaModel([])).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// B5 — buildInitFoxsContainerArgs
+// ---------------------------------------------------------------------------
+
+describe('buildInitFoxsContainerArgs', () => {
+  const baseOpts = {
+    image: 'carbonara-allatom-runtime:dev',
+    hostDir: '/data/carbonara_initfoxs/preview-uuid',
+    pdbFileName: 'model.pdb',
+    datFileName: 'saxs.dat',
+    pythonBin: 'python',
+    initFoxsPath: '/opt/carbonara/carbonara_initfoxs.py'
+  }
+
+  it('builds the correct argument vector without maxQ or mount', () => {
+    const args = buildInitFoxsContainerArgs(baseOpts)
+    expect(args).toEqual([
+      'run', '--rm',
+      '-v', `${baseOpts.hostDir}:/job:Z`,
+      baseOpts.image,
+      baseOpts.pythonBin,
+      baseOpts.initFoxsPath,
+      '--pdb', `/job/${baseOpts.pdbFileName}`,
+      '--saxs', `/job/${baseOpts.datFileName}`,
+      '--outdir', '/job'
+    ])
+  })
+
+  it('appends --max_q when maxQ is provided', () => {
+    const args = buildInitFoxsContainerArgs({ ...baseOpts, maxQ: 0.35 })
+    const mqIdx = args.indexOf('--max_q')
+    expect(mqIdx).toBeGreaterThan(-1)
+    expect(args[mqIdx + 1]).toBe('0.35')
+  })
+
+  it('does NOT append --max_q when maxQ is null', () => {
+    const args = buildInitFoxsContainerArgs({ ...baseOpts, maxQ: null })
+    expect(args).not.toContain('--max_q')
+  })
+
+  it('does NOT append --max_q when maxQ is undefined', () => {
+    const args = buildInitFoxsContainerArgs({ ...baseOpts })
+    expect(args).not.toContain('--max_q')
+  })
+
+  it('inserts initFoxsMount bind before image when initFoxsMount is set', () => {
+    const mount = '/home/user/bilbomd/infra/carbonara/carbonara_initfoxs.py'
+    const args = buildInitFoxsContainerArgs({
+      ...baseOpts,
+      initFoxsMount: mount
+    })
+    // job mount
+    expect(args[2]).toBe('-v')
+    expect(args[3]).toBe(`${baseOpts.hostDir}:/job:Z`)
+    // initfoxs mount before image
+    expect(args[4]).toBe('-v')
+    expect(args[5]).toBe(`${mount}:${baseOpts.initFoxsPath}:ro,Z`)
+    // image is next
+    expect(args[6]).toBe(baseOpts.image)
+  })
+
+  it('does NOT insert mount when initFoxsMount is empty string', () => {
+    const args = buildInitFoxsContainerArgs({
+      ...baseOpts,
+      initFoxsMount: ''
+    })
+    // No extra -v: image immediately after job-mount pair
+    expect(args[4]).toBe(baseOpts.image)
+  })
+
+  it('does NOT insert mount when initFoxsMount is absent', () => {
+    const args = buildInitFoxsContainerArgs(baseOpts)
+    expect(args[4]).toBe(baseOpts.image)
+  })
+
+  it('correctly combines mount + maxQ', () => {
+    const mount = '/home/user/initfoxs.py'
+    const args = buildInitFoxsContainerArgs({
+      ...baseOpts,
+      initFoxsMount: mount,
+      maxQ: 0.5
+    })
+    expect(args).toContain('--max_q')
+    expect(args[args.indexOf('--max_q') + 1]).toBe('0.5')
+    expect(args).toContain('-v')
+    // mount present
+    const mountArg = args.find((a) => a.startsWith(mount))
+    expect(mountArg).toBeTruthy()
   })
 })

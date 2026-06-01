@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Box,
   Button,
@@ -15,12 +15,17 @@ import {
   Radio,
   RadioGroup,
   FormControl,
-  FormLabel
+  FormLabel,
+  CircularProgress
 } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { Form, Formik, Field, FormikHelpers } from 'formik'
 import FileSelect from 'features/jobs/FileSelect'
-import { useAddNewCarbonaraJobMutation } from 'slices/jobsApiSlice'
+import {
+  useAddNewCarbonaraJobMutation,
+  useAddCarbonaraInitFoxsMutation,
+  useLazyGetCarbonaraInitFoxsQuery
+} from 'slices/jobsApiSlice'
 import SendIcon from '@mui/icons-material/Send'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import AddIcon from '@mui/icons-material/Add'
@@ -31,6 +36,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import HeaderBox from 'components/HeaderBox'
 import useTitle from 'hooks/useTitle'
 import JobSuccessAlert from 'features/jobs/JobSuccessAlert'
+import FoXSChart from 'features/scoperjob/FoXSChart'
 
 interface ConstraintPairRow {
   res1: string
@@ -90,6 +96,87 @@ const NewCarbonaraJobForm = () => {
     useAddNewCarbonaraJobMutation()
   const [submitError, setSubmitError] = useState<string | null>(null)
 
+  // B5: initial scattering check state
+  const [addCarbonaraInitFoxs] = useAddCarbonaraInitFoxsMutation()
+  const [triggerGetPreview] = useLazyGetCarbonaraInitFoxsQuery()
+  const [previewStatus, setPreviewStatus] = useState<
+    'idle' | 'loading' | 'done' | 'error'
+  >('idle')
+  const [previewChi2, setPreviewChi2] = useState<number | null>(null)
+  const [previewFoxs, setPreviewFoxs] = useState<
+    { q: number; exp: number; model: number; error: number }[] | null
+  >(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  // Refs to track the active preview poll so we can cancel when inputs change
+  const previewPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const previewIdRef = useRef<string | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const stopPreviewPoll = useCallback(() => {
+    if (previewPollRef.current) {
+      clearInterval(previewPollRef.current)
+      previewPollRef.current = null
+    }
+  }, [])
+
+  const startPreview = useCallback(
+    async (
+      pdbFile: string,
+      datFile: string,
+      maxQ: number
+    ) => {
+      setPreviewStatus('loading')
+      setPreviewChi2(null)
+      setPreviewFoxs(null)
+      setPreviewError(null)
+      stopPreviewPoll()
+
+      let previewId: string
+      try {
+        const form = new FormData()
+        form.append('pdb_file', pdbFile)
+        form.append('dat_file', datFile)
+        form.append('max_q', String(maxQ))
+        const result = await addCarbonaraInitFoxs(form).unwrap()
+        previewId = result.previewId
+        previewIdRef.current = previewId
+      } catch {
+        setPreviewStatus('error')
+        setPreviewError('Failed to submit preview request')
+        return
+      }
+
+      const started = Date.now()
+      const CAP_MS = 60_000
+
+      previewPollRef.current = setInterval(async () => {
+        if (Date.now() - started > CAP_MS) {
+          stopPreviewPoll()
+          setPreviewStatus('error')
+          setPreviewError('Preview timed out (60 s)')
+          return
+        }
+        try {
+          const data = await triggerGetPreview(previewId).unwrap()
+          if (data.status === 'done') {
+            stopPreviewPoll()
+            setPreviewChi2(data.chi2 ?? null)
+            setPreviewFoxs(data.foxs ?? null)
+            setPreviewStatus('done')
+          } else if (data.status === 'error') {
+            stopPreviewPoll()
+            setPreviewStatus('error')
+            setPreviewError(data.message ?? 'Preview failed')
+          }
+          // status === 'pending': keep polling
+        } catch {
+          // transient fetch error: keep polling until cap
+        }
+      }, 2000)
+    },
+    [addCarbonaraInitFoxs, triggerGetPreview, stopPreviewPoll]
+  )
+
   // B8: multimer mode toggle and chain-merge editor rows
   const [multimer, setMultimer] = useState<boolean>(false)
   const [mergeRows, setMergeRows] = useState<ChainMergeRow[]>([emptyMergeRow()])
@@ -102,6 +189,25 @@ const NewCarbonaraJobForm = () => {
   // Constraints state — managed outside Formik (file/pairs are UI-only state)
   const [constraintsMethod, setConstraintsMethod] = useState<'none' | 'file' | 'pairs'>('none')
   const [constraintPairs, setConstraintPairs] = useState<ConstraintPairRow[]>([emptyPairRow()])
+
+  // Debounced trigger: called when pdb_file, dat_file, or max_q change
+  const triggerPreviewDebounced = useCallback(
+    (pdbFile: string, datFile: string, maxQ: number) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        startPreview(pdbFile, datFile, maxQ).catch(() => undefined)
+      }, 800)
+    },
+    [startPreview]
+  )
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopPreviewPoll()
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [stopPreviewPoll])
 
   const successResponse = jobResponse
     ? {
@@ -352,6 +458,98 @@ const NewCarbonaraJobForm = () => {
                         fileExt=".dat"
                       />
                     </Grid>
+
+                    {/* B5: Initial scattering check panel */}
+                    {values.pdb_file && values.dat_file && (() => {
+                      // Side-effect: debounce-trigger preview when inputs change.
+                      // Using an IIFE to avoid introducing a child component here —
+                      // the actual async work happens outside the render tree.
+                      if (
+                        typeof window !== 'undefined' &&
+                        values.pdb_file &&
+                        values.dat_file
+                      ) {
+                        triggerPreviewDebounced(
+                          values.pdb_file,
+                          values.dat_file,
+                          values.max_q
+                        )
+                      }
+                      return null
+                    })()}
+
+                    {(previewStatus !== 'idle') && (
+                      <Box
+                        sx={{
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          p: 2,
+                          my: 2
+                        }}
+                      >
+                        <Typography
+                          variant="subtitle2"
+                          sx={{ mb: 1, fontWeight: 600 }}
+                        >
+                          Initial scattering check
+                        </Typography>
+
+                        {previewStatus === 'loading' && (
+                          <Box
+                            sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                          >
+                            <CircularProgress size={16} />
+                            <Typography variant="body2" color="text.secondary">
+                              Running initial FoXS fit…
+                            </Typography>
+                          </Box>
+                        )}
+
+                        {previewStatus === 'error' && (
+                          <Alert severity="info" variant="outlined" sx={{ mt: 1 }}>
+                            Initial check unavailable: {previewError}
+                          </Alert>
+                        )}
+
+                        {previewStatus === 'done' && previewFoxs && (
+                          <>
+                            <Typography
+                              variant="body2"
+                              sx={{ mb: 1 }}
+                            >
+                              Initial chi&#178; ={' '}
+                              <strong>
+                                {previewChi2 != null
+                                  ? previewChi2.toFixed(3)
+                                  : 'N/A'}
+                              </strong>
+                            </Typography>
+                            <FoXSChart
+                              title="Initial model (input structure)"
+                              data={previewFoxs.map((p) => ({
+                                q: p.q,
+                                exp_intensity: p.exp,
+                                model_intensity: p.model,
+                                error: p.error
+                              }))}
+                              residualsData={previewFoxs.map((p) => ({
+                                q: p.q,
+                                res:
+                                  p.error !== 0
+                                    ? (p.exp - p.model) / p.error
+                                    : 0
+                              }))}
+                              chisq={previewChi2 ?? 0}
+                              c1="1.00"
+                              c2="0.00"
+                              minYAxis={-5}
+                              maxYAxis={5}
+                            />
+                          </>
+                        )}
+                      </Box>
+                    )}
 
                     <Box sx={{ display: 'flex', gap: 2, my: 2 }}>
                       <Field

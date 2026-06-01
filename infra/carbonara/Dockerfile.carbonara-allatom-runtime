@@ -30,6 +30,7 @@ WORKDIR /opt
 
 COPY Carbonara /opt/carbonara
 COPY carbonara_bilbomd_runner_refined.py /opt/carbonara/carbonara_bilbomd_runner_refined.py
+COPY carbonara_initfoxs.py /opt/carbonara/carbonara_initfoxs.py
 
 WORKDIR /opt/carbonara
 

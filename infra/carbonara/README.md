@@ -19,6 +19,15 @@ pathway. They are authored and maintained as part of this (BilboMD) repository.
   outputs + `wrapper_summary.json`. (Optional cg2all all-atom reconstruction is
   orchestrated separately by the BilboMD worker via `backmap_cli.py`.)
   **This copy is the source of truth.**
+- `carbonara_initfoxs.py` — lightweight **initial scattering check** helper
+  (B5). Called by the BilboMD worker's `carbonara-preview` queue. Given
+  `--pdb`, `--saxs`, `--outdir`, and an optional `--max_q`, it: converts
+  CIF/mmCIF to PDB if needed (via CarbonaraDataTools or openmm.app), runs
+  `pyfoxs`, parses the `.fit` file (chi^2 + q/exp/model/error rows), and
+  writes `outdir/result.json`. On any failure writes
+  `{"status":"error","message":"..."}` and exits 1. Baked into the image at
+  `/opt/carbonara/carbonara_initfoxs.py`; override for local dev via
+  `CARBONARA_INITFOXS_MOUNT`. **This copy is the source of truth.**
 - `Dockerfile.carbonara-allatom-runtime` — builds the `carbonara-allatom-runtime`
   image (Carbonara C++ engine + Python env + cg2all + pyFoXS + this wrapper).
 
@@ -55,3 +64,15 @@ When set, the worker adds `-v <that file>:/opt/carbonara/carbonara_bilbomd_runne
 to the `podman run`. Leave it empty in production (the baked image wrapper is
 used). The in-container path is `CARBONARA_RUNNER`
 (default `/opt/carbonara/carbonara_bilbomd_runner_refined.py`).
+
+Similarly, for the initial scattering check helper (`carbonara_initfoxs.py`),
+set:
+
+```bash
+CARBONARA_INITFOXS_MOUNT=/path/to/bilbomd/infra/carbonara/carbonara_initfoxs.py
+```
+
+When set, the worker adds `-v <that file>:/opt/carbonara/carbonara_initfoxs.py:ro,Z`
+to the `podman run` for preview jobs. Leave it empty in production (the baked
+image copy is used). The in-container path is `CARBONARA_INITFOXS_PATH`
+(default `/opt/carbonara/carbonara_initfoxs.py`).
