@@ -1,0 +1,122 @@
+FROM mambaorg/micromamba:1.5.8-bookworm
+
+USER root
+
+# System/build dependencies used by Carbonara, Python package builds, pyFoXS clone,
+# Carbonara C++ compilation, and cg2all-related pip builds.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    bash \
+    ca-certificates \
+    libgomp1 \
+    file \
+    && rm -rf /var/lib/apt/lists/*
+
+# Keep the base Carbonara environment minimal at conda level, then let
+# Carbonara's setupPython.sh install the supported Python-side stack.
+RUN micromamba install -y -n base -c conda-forge \
+    python=3.12 \
+    pip \
+    && micromamba clean -a -y
+
+ENV PATH="/opt/conda/bin:${PATH}"
+ENV PIP_NO_CACHE_DIR=1
+ENV MAMBA_ROOT_PREFIX="/opt/conda"
+ENV CG2ALL_ENV="/opt/conda/envs/cg2all"
+
+WORKDIR /opt
+
+COPY Carbonara /opt/carbonara
+COPY carbonara_bilbomd_runner_refined.py /opt/carbonara/carbonara_bilbomd_runner_refined.py
+
+WORKDIR /opt/carbonara
+
+# Install the Carbonara Python environment through the repository-supported script.
+# This installs requirements.txt, handles biobox separately, clones pyFoXS,
+# creates pyfoxs/carbonara-python wrappers, and runs Carbonara smoke tests.
+RUN PYTHON=/opt/conda/bin/python \
+    PIP_INSTALL_OPTS="--no-cache-dir --no-compile" \
+    bash /opt/carbonara/setupPython.sh
+
+# Build Carbonara C++ executables inside the image.
+RUN rm -rf build && mkdir build && cd build && cmake .. && make -j2
+
+# Explicit smoke checks for the Carbonara runtime contract.
+RUN python --version \
+    && pyfoxs --help >/dev/null \
+    && python - <<'PY'
+from pdbfixer import PDBFixer
+from openmm.app import PDBFile
+import CarbonaraDataTools
+import biobox
+import torch
+print("Carbonara runtime smoke check passed")
+PY
+
+# ---------------------------------------------------------------------
+# cg2all environment
+# ---------------------------------------------------------------------
+#
+# Keep cg2all isolated from the Carbonara Python 3.12 environment because the
+# Colab route uses a separate Python 3.10 env with an older pinned stack.
+# The important fix relative to the previous Dockerfile is `-c conda-forge`
+# on the micromamba create command; otherwise micromamba has no channel to
+# resolve python=3.10 and pip.
+
+RUN micromamba create -y -c conda-forge -p "${CG2ALL_ENV}" \
+    python=3.10 \
+    pip \
+    && micromamba clean -a -y
+
+RUN micromamba run -p "${CG2ALL_ENV}" \
+    python -m pip install --upgrade pip setuptools wheel
+
+# Pinned compatibility stack from the Carbonara/cg2all notebook.
+RUN micromamba run -p "${CG2ALL_ENV}" \
+    pip install --no-cache-dir "numpy==1.26.4"
+
+RUN micromamba run -p "${CG2ALL_ENV}" \
+    pip install --no-cache-dir "torch==1.13.1"
+
+RUN micromamba run -p "${CG2ALL_ENV}" \
+    pip install --no-cache-dir "dgl==0.9.1" -f https://data.dgl.ai/wheels/repo.html
+
+RUN micromamba run -p "${CG2ALL_ENV}" \
+    pip install --no-cache-dir "e3nn==0.4.4" "ml-collections==0.1.1"
+
+# cg2all-related dependencies and cg2all itself.
+RUN micromamba run -p "${CG2ALL_ENV}" \
+    pip install --no-cache-dir git+https://github.com/huhlim/mdtraj.git
+
+RUN micromamba run -p "${CG2ALL_ENV}" \
+    pip install --no-cache-dir git+https://github.com/huhlim/SE3Transformer.git
+
+RUN micromamba run -p "${CG2ALL_ENV}" \
+    pip install --no-cache-dir --no-deps \
+    git+https://github.com/huhlim/cg2all@a00b8816736c08852944f147e39164d0f5e1834e
+
+# Stable command used by Carbonara's all-atom setup script.
+# This avoids Colab-specific paths such as /content/bin/micromamba and
+# /root/micromamba/envs/cg2all.
+RUN printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'exec micromamba run -p /opt/conda/envs/cg2all convert_cg2all "$@"' \
+    > /usr/local/bin/convert_cg2all_carbonara \
+    && chmod +x /usr/local/bin/convert_cg2all_carbonara
+
+# cg2all smoke checks.
+RUN micromamba run -p "${CG2ALL_ENV}" python - <<'PY'
+import numpy
+import torch
+import dgl
+import e3nn
+import ml_collections
+print("cg2all Python dependency smoke check passed")
+PY
+
+RUN micromamba run -p "${CG2ALL_ENV}" convert_cg2all --help >/dev/null
+RUN convert_cg2all_carbonara --help >/dev/null
+
+CMD ["/bin/bash"]
