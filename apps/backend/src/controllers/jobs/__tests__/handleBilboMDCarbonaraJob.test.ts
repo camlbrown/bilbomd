@@ -214,6 +214,51 @@ describe('handleBilboMDCarbonaraJob', () => {
     })
   })
 
+  describe('PAE-guided flexibility (Phase-B)', () => {
+    it('stores alphafold_flex true, pae_file, and pae_flex_threshold when provided', async () => {
+      const { req, res } = makeReqRes(
+        { alphafold_flex: 'true', pae_flex_threshold: '12' },
+        {
+          pdb_file: [{ originalname: 'model.pdb' }],
+          dat_file: [{ originalname: 'saxs.dat' }],
+          pae_file: [{ originalname: 'PAE.json' }]
+        }
+      )
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.alphafold_flex).toBe(true)
+      expect(data.pae_file).toBe('pae.json')
+      expect(data.pae_flex_threshold).toBe(12)
+    })
+
+    it('stores alphafold_flex false and no pae_file by default', async () => {
+      const { req, res } = makeReqRes()
+
+      await handleBilboMDCarbonaraJob(req, res, user, UUID, {
+        accessMode: 'user'
+      })
+
+      const { BilboMdCarbonaraJob } = (await import(
+        '@bilbomd/mongodb-schema'
+      )) as unknown as {
+        BilboMdCarbonaraJob: { lastData: Record<string, unknown> }
+      }
+      const data = BilboMdCarbonaraJob.lastData
+      expect(data.alphafold_flex).toBe(false)
+      expect(data.pae_file).toBeUndefined()
+      expect(data.pae_flex_threshold).toBe(16)
+    })
+  })
+
   describe('error handling', () => {
     it('returns 500 when job save throws', async () => {
       const { req, res } = makeReqRes()

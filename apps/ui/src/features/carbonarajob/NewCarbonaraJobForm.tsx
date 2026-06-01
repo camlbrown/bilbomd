@@ -36,6 +36,9 @@ interface CarbonaraJobFormValues {
   rotation: boolean
   all_atom: boolean
   do_foxs: boolean
+  pae_file: string
+  alphafold_flex: boolean
+  pae_flex_threshold: number
 }
 
 const NewCarbonaraJobForm = () => {
@@ -63,7 +66,10 @@ const NewCarbonaraJobForm = () => {
     max_fit_steps: 1000,
     rotation: false,
     all_atom: false,
-    do_foxs: true
+    do_foxs: true,
+    pae_file: '',
+    alphafold_flex: false,
+    pae_flex_threshold: 16
   }
 
   const onSubmit = async (
@@ -82,6 +88,11 @@ const NewCarbonaraJobForm = () => {
     form.append('rotation', values.rotation.toString())
     form.append('all_atom', values.all_atom.toString())
     form.append('do_foxs', values.do_foxs.toString())
+    form.append('alphafold_flex', values.alphafold_flex.toString())
+    form.append('pae_flex_threshold', values.pae_flex_threshold.toString())
+    if (values.pae_file) {
+      form.append('pae_file', values.pae_file)
+    }
     form.append('bilbomd_mode', 'carbonara')
 
     try {
@@ -410,6 +421,92 @@ const NewCarbonaraJobForm = () => {
                       </Box>
                     )}
 
+                    <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                      <Field name="alphafold_flex">
+                        {({
+                          field
+                        }: {
+                          field: {
+                            name: string
+                            value: boolean
+                            onChange: (
+                              e: React.ChangeEvent<HTMLInputElement>
+                            ) => void
+                          }
+                        }) => (
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={field.value}
+                                onChange={field.onChange}
+                                name={field.name}
+                                disabled={isSubmitting}
+                                slotProps={{
+                                  input: {
+                                    'aria-label': 'alphafold-flex-checkbox'
+                                  }
+                                }}
+                              />
+                            }
+                            label="Use AlphaFold PAE flexibility"
+                          />
+                        )}
+                      </Field>
+                    </Box>
+
+                    {values.alphafold_flex && (
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 1,
+                          ml: 3,
+                          mt: 0.5
+                        }}
+                      >
+                        <Grid>
+                          <Field
+                            name="pae_file"
+                            id="pae-file-upload"
+                            as={FileSelect}
+                            title="Select File"
+                            disabled={isSubmitting}
+                            setFieldValue={setFieldValue}
+                            setFieldTouched={setFieldTouched}
+                            error={errors.pae_file && touched.pae_file}
+                            errorMessage={
+                              errors.pae_file ? errors.pae_file : ''
+                            }
+                            fileType="AlphaFold2 PAE *.json"
+                            fileExt=".json"
+                          />
+                        </Grid>
+
+                        <Field
+                          label="PAE flexibility threshold (Å)"
+                          name="pae_flex_threshold"
+                          id="pae_flex_threshold"
+                          type="number"
+                          disabled={isSubmitting}
+                          as={TextField}
+                          onChange={handleChange}
+                          onBlur={handleBlur}
+                          error={
+                            errors.pae_flex_threshold &&
+                            touched.pae_flex_threshold
+                          }
+                          helperText={
+                            errors.pae_flex_threshold &&
+                            touched.pae_flex_threshold
+                              ? errors.pae_flex_threshold
+                              : ''
+                          }
+                          value={values.pae_flex_threshold}
+                          sx={{ width: '260px' }}
+                        />
+                      </Box>
+                    )}
+
                     {isSubmitting && (
                       <Box sx={{ my: 1, width: '520px' }}>
                         <LinearProgress />
@@ -423,7 +520,8 @@ const NewCarbonaraJobForm = () => {
                           !isValid ||
                           values.title === '' ||
                           values.pdb_file === '' ||
-                          values.dat_file === ''
+                          values.dat_file === '' ||
+                          (values.alphafold_flex && values.pae_file === '')
                         }
                         loading={isSubmitting}
                         endIcon={<SendIcon />}

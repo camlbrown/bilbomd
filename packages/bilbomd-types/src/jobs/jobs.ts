@@ -155,6 +155,9 @@ export interface BilboMDCarbonaraDTO extends BaseJobDTO {
   rotation?: boolean
   all_atom?: boolean
   do_foxs?: boolean
+  pae_file?: string
+  alphafold_flex?: boolean
+  pae_flex_threshold?: number
 }
 
 export interface BilboMDMultiDTO extends BaseJobDTO {

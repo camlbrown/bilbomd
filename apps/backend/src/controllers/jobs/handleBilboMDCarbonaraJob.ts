@@ -53,6 +53,7 @@ const handleBilboMDCarbonaraJob = async (
     // Support example-data fallback (files referenced by name in the body).
     let pdbFile = files?.['pdb_file']?.[0]
     let datFile = files?.['dat_file']?.[0]
+    let paeFile = files?.['pae_file']?.[0]
     if (!pdbFile && req.body.pdb_file) {
       pdbFile = {
         originalname: req.body.pdb_file,
@@ -67,12 +68,25 @@ const handleBilboMDCarbonaraJob = async (
         size: getFileStats(path.join(uploadFolder, UUID, req.body.dat_file)).size
       } as Express.Multer.File
     }
+    if (!paeFile && req.body.pae_file) {
+      paeFile = {
+        originalname: req.body.pae_file,
+        path: path.join(uploadFolder, UUID, req.body.pae_file),
+        size: getFileStats(path.join(uploadFolder, UUID, req.body.pae_file)).size
+      } as Express.Multer.File
+    }
+
+    const alphafoldFlex = toBoolean(req.body.alphafold_flex)
+    const paeFlexThreshold = toNumber(req.body.pae_flex_threshold, 16.0)
 
     logger.info(
       `PDB File: ${pdbFile ? pdbFile.originalname.toLowerCase() : 'Not Found'}`
     )
     logger.info(
       `DAT File: ${datFile ? datFile.originalname.toLowerCase() : 'Not Found'}`
+    )
+    logger.info(
+      `PAE File: ${paeFile ? paeFile.originalname.toLowerCase() : 'Not provided'}`
     )
 
     const jobPayload = {
@@ -81,6 +95,7 @@ const handleBilboMDCarbonaraJob = async (
       email: req.body.email,
       dat_file: datFile,
       pdb_file: pdbFile,
+      pae_file: paeFile,
       fit_n_times: req.body.fit_n_times,
       min_q: req.body.min_q,
       max_q: req.body.max_q,
@@ -89,7 +104,9 @@ const handleBilboMDCarbonaraJob = async (
       mixture_n: req.body.mixture_n,
       rotation: req.body.rotation,
       all_atom: req.body.all_atom,
-      do_foxs: req.body.do_foxs
+      do_foxs: req.body.do_foxs,
+      alphafold_flex: alphafoldFlex,
+      pae_flex_threshold: paeFlexThreshold
     }
 
     try {
@@ -120,6 +137,7 @@ const handleBilboMDCarbonaraJob = async (
       uuid: UUID,
       pdb_file: pdbFile.originalname.toLowerCase(),
       data_file: datFile.originalname.toLowerCase(),
+      pae_file: paeFile ? paeFile.originalname.toLowerCase() : undefined,
       fit_n_times: toNumber(req.body.fit_n_times, CARBONARA_DEFAULTS.fit_n_times),
       min_q: toNumber(req.body.min_q, CARBONARA_DEFAULTS.min_q),
       max_q: toNumber(req.body.max_q, CARBONARA_DEFAULTS.max_q),
@@ -132,6 +150,8 @@ const handleBilboMDCarbonaraJob = async (
       rotation: toBoolean(req.body.rotation),
       all_atom: toBoolean(req.body.all_atom),
       do_foxs: req.body.do_foxs !== undefined ? toBoolean(req.body.do_foxs) : true,
+      alphafold_flex: alphafoldFlex,
+      pae_flex_threshold: paeFlexThreshold,
       status: 'Submitted',
       time_submitted: new Date(),
       steps,

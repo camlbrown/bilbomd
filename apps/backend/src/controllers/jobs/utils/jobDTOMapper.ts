@@ -261,7 +261,10 @@ export const mapJobMongoToDTO = (job: IJob) => {
         mixture_n: carbonaraJob.mixture_n,
         rotation: carbonaraJob.rotation,
         all_atom: carbonaraJob.all_atom,
-        do_foxs: carbonaraJob.do_foxs
+        do_foxs: carbonaraJob.do_foxs,
+        pae_file: carbonaraJob.pae_file,
+        alphafold_flex: carbonaraJob.alphafold_flex,
+        pae_flex_threshold: carbonaraJob.pae_flex_threshold
       } as BilboMDCarbonaraDTO
     }
 

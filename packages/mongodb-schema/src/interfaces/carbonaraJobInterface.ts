@@ -12,6 +12,9 @@ interface IBilboMDCarbonaraJob extends IJob {
   rotation?: boolean
   all_atom?: boolean
   do_foxs?: boolean
+  pae_file?: string
+  alphafold_flex?: boolean
+  pae_flex_threshold?: number
 }
 
 export { IBilboMDCarbonaraJob }

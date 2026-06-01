@@ -61,6 +61,17 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
     if (!(await fs.pathExists(saxsPath))) {
       throw new Error(`Carbonara SAXS file not found: ${saxsPath}`)
     }
+    if (foundJob.alphafold_flex === true) {
+      if (!foundJob.pae_file) {
+        throw new Error(
+          'alphafold_flex is enabled but no pae_file was stored for this job'
+        )
+      }
+      const paePath = path.join(workDir, foundJob.pae_file)
+      if (!(await fs.pathExists(paePath))) {
+        throw new Error(`Carbonara PAE file not found: ${paePath}`)
+      }
+    }
     await MQjob.log('end carbonara-validate')
     await progress.update(15)
 
@@ -79,7 +90,10 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         max_fit_steps: foundJob.max_fit_steps,
         mixture_n: foundJob.mixture_n,
         rotation: foundJob.rotation ?? false
-      }
+      },
+      alphaFoldFlex: foundJob.alphafold_flex,
+      paeFileName: foundJob.pae_file,
+      paeFlexThreshold: foundJob.pae_flex_threshold
     })
     const jobJsonPath = path.join(workDir, 'job.json')
     await fs.writeJson(jobJsonPath, jobJson, { spaces: 2 })

@@ -1,4 +1,4 @@
-import { object, string, number } from 'yup'
+import { object, string, number, boolean, mixed } from 'yup'
 import {
   requiredFile,
   pdbOrCifExtTest,
@@ -8,11 +8,13 @@ import {
   fileNameLengthTest,
   noSpacesTest,
   saxsCheck,
-  fileExtTest
+  fileExtTest,
+  jsonFileCheck
 } from './fieldTests/fieldTests'
 
-// Phase-1 Carbonara form validation: structure + SAXS plus coarse-grained
-// fitting controls. Mirrors the backend carbonaraJobSchema.
+// Phase-1 + Phase-B Carbonara form validation: structure + SAXS plus
+// coarse-grained fitting controls and optional PAE-guided flexibility.
+// Mirrors the backend carbonaraJobSchema.
 export const bilbomdCarbonaraJobSchema = object().shape({
   title: string()
     .required('Please provide a title for your BilboMD Carbonara Job.')
@@ -59,5 +61,22 @@ export const bilbomdCarbonaraJobSchema = object().shape({
     .typeError('Max fitting steps must be a number')
     .integer('Max fitting steps must be an integer')
     .min(1, 'At least 1 step is required')
-    .required('Max fitting steps is required')
+    .required('Max fitting steps is required'),
+  alphafold_flex: boolean().optional(),
+  pae_flex_threshold: number()
+    .typeError('PAE flexibility threshold must be a number')
+    .min(0, 'PAE flexibility threshold must be >= 0')
+    .optional(),
+  pae_file: mixed().when('alphafold_flex', {
+    is: true,
+    then: (s) =>
+      s
+        .concat(requiredFile('A PAE *.json file is required when using AlphaFold flexibility'))
+        .concat(jsonFileCheck())
+        .concat(fileExtTest('json'))
+        .concat(fileSizeTest(120_000_000))
+        .concat(noSpacesTest())
+        .concat(fileNameLengthTest()),
+    otherwise: (s) => s.optional()
+  })
 })

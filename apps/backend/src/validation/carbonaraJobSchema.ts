@@ -7,14 +7,16 @@ import {
   noSpacesTest,
   noShellMetacharsTest,
   saxsCheck,
+  jsonFileCheck,
   pdbOrCifExtTest,
   pdbOrCifChainIdCheck,
   pdbOrCifResidueCheck
 } from './helpers/fileValidators.js'
 
-// Phase-1 Carbonara job validation: structure + SAXS files plus coarse-grained
-// fitting controls. Numeric fields are optional here because the Mongoose schema
-// supplies sensible defaults; bounds keep obviously-bad values out.
+// Phase-1 + Phase-B Carbonara job validation: structure + SAXS files plus
+// coarse-grained fitting controls and optional PAE-guided flexibility.
+// Numeric fields are optional here because the Mongoose schema supplies sensible
+// defaults; bounds keep obviously-bad values out.
 export const carbonaraJobSchema = yup.object({
   title: yup
     .string()
@@ -65,5 +67,24 @@ export const carbonaraJobSchema = yup.object({
     .optional(),
   rotation: yup.boolean().optional(),
   all_atom: yup.boolean().optional(),
-  do_foxs: yup.boolean().optional()
+  do_foxs: yup.boolean().optional(),
+  alphafold_flex: yup.boolean().optional(),
+  pae_flex_threshold: yup
+    .number()
+    .typeError('pae_flex_threshold must be a number')
+    .min(0, 'pae_flex_threshold must be >= 0')
+    .optional(),
+  pae_file: yup.mixed().when('alphafold_flex', {
+    is: true,
+    then: (s) =>
+      s
+        .concat(requiredFile('A PAE *.json file is required when using AlphaFold flexibility'))
+        .concat(jsonFileCheck())
+        .concat(fileExtTest('json'))
+        .concat(fileSizeTest(120_000_000))
+        .concat(noSpacesTest())
+        .concat(noShellMetacharsTest())
+        .concat(fileNameLengthTest()),
+    otherwise: (s) => s.optional()
+  })
 })

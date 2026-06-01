@@ -26,6 +26,9 @@ export interface CarbonaraJobParameters {
   max_fit_steps: number
   mixture_n: number
   rotation?: boolean
+  alphaFoldFlex?: boolean
+  pae?: string
+  pae_flex_threshold?: number
 }
 
 export interface CarbonaraJobJson {
@@ -45,22 +48,27 @@ export interface BuildCarbonaraJobJsonOptions {
   pdbFileName: string
   saxsFileName: string
   parameters: CarbonaraJobParameters
+  // Optional PAE-guided flexibility. When alphaFoldFlex is true and
+  // paeFileName is set the wrapper receives alphaFoldFlex/pae/pae_flex_threshold.
+  paeFileName?: string
+  alphaFoldFlex?: boolean
+  paeFlexThreshold?: number
 }
 
 /**
  * Build the job.json object consumed by carbonara_bilbomd_runner_refined.py.
  * Inputs are expressed as absolute in-container paths under the /job mount.
+ *
+ * When opts.alphaFoldFlex is true AND opts.paeFileName is set, three extra
+ * keys are added to parameters so the wrapper can pass them to
+ * setup_carbonara.py (--alphaFoldFlex --pae --pae_flex_threshold). When
+ * alphaFoldFlex is false or paeFileName is absent, NONE of those three keys
+ * are emitted, keeping Phase-1 output byte-identical.
  */
 export const buildCarbonaraJobJson = (
   opts: BuildCarbonaraJobJsonOptions
-): CarbonaraJobJson => ({
-  job_name: opts.jobName,
-  carbonara_root: opts.carbonaraRoot,
-  pdb: `${CARBONARA_JOB_MOUNT}/${opts.pdbFileName}`,
-  saxs: `${CARBONARA_JOB_MOUNT}/${opts.saxsFileName}`,
-  workdir: `${CARBONARA_JOB_MOUNT}/work`,
-  outdir: `${CARBONARA_JOB_MOUNT}/results`,
-  parameters: {
+): CarbonaraJobJson => {
+  const baseParameters: CarbonaraJobParameters = {
     fit_n_times: opts.parameters.fit_n_times,
     min_q: opts.parameters.min_q,
     max_q: opts.parameters.max_q,
@@ -69,7 +77,23 @@ export const buildCarbonaraJobJson = (
     mixture_n: opts.parameters.mixture_n,
     rotation: opts.parameters.rotation ?? false
   }
-})
+
+  if (opts.alphaFoldFlex === true && opts.paeFileName) {
+    baseParameters.alphaFoldFlex = true
+    baseParameters.pae = `${CARBONARA_JOB_MOUNT}/${opts.paeFileName}`
+    baseParameters.pae_flex_threshold = opts.paeFlexThreshold ?? 16.0
+  }
+
+  return {
+    job_name: opts.jobName,
+    carbonara_root: opts.carbonaraRoot,
+    pdb: `${CARBONARA_JOB_MOUNT}/${opts.pdbFileName}`,
+    saxs: `${CARBONARA_JOB_MOUNT}/${opts.saxsFileName}`,
+    workdir: `${CARBONARA_JOB_MOUNT}/work`,
+    outdir: `${CARBONARA_JOB_MOUNT}/results`,
+    parameters: baseParameters
+  }
+}
 
 export interface BuildCarbonaraContainerArgsOptions {
   image: string

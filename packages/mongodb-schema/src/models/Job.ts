@@ -357,7 +357,10 @@ const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
   mixture_n: { type: Number, required: true, default: 1 },
   rotation: { type: Boolean, required: false, default: false },
   all_atom: { type: Boolean, default: false },
-  do_foxs: { type: Boolean, default: true }
+  do_foxs: { type: Boolean, default: true },
+  pae_file: { type: String, required: false },
+  alphafold_flex: { type: Boolean, default: false },
+  pae_flex_threshold: { type: Number, default: 16.0 }
 })
 
 jobSchema.index({ uuid: 1 })

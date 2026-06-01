@@ -53,6 +53,88 @@ describe('buildCarbonaraJobJson', () => {
     })
     expect(json.parameters.rotation).toBe(true)
   })
+
+  // Phase-B: PAE-guided flexibility
+  it('emits alphaFoldFlex/pae/pae_flex_threshold when alphaFoldFlex is true', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'pae-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      alphaFoldFlex: true,
+      paeFileName: 'pae.json',
+      paeFlexThreshold: 12
+    })
+    expect(json.parameters.alphaFoldFlex).toBe(true)
+    expect(json.parameters.pae).toBe(`${CARBONARA_JOB_MOUNT}/pae.json`)
+    expect(json.parameters.pae_flex_threshold).toBe(12)
+  })
+
+  it('uses the default pae_flex_threshold of 16 when not specified', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'pae-uuid-default',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      alphaFoldFlex: true,
+      paeFileName: 'pae.json'
+    })
+    expect(json.parameters.pae_flex_threshold).toBe(16.0)
+  })
+
+  it('does NOT emit alphaFoldFlex/pae/pae_flex_threshold when alphaFoldFlex is false', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'no-pae-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      alphaFoldFlex: false,
+      paeFileName: 'pae.json',
+      paeFlexThreshold: 12
+    })
+    expect(json.parameters).not.toHaveProperty('alphaFoldFlex')
+    expect(json.parameters).not.toHaveProperty('pae')
+    expect(json.parameters).not.toHaveProperty('pae_flex_threshold')
+  })
+
+  it('does NOT emit PAE keys when alphaFoldFlex is true but paeFileName is absent', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'no-pae-file-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      alphaFoldFlex: true
+    })
+    expect(json.parameters).not.toHaveProperty('alphaFoldFlex')
+    expect(json.parameters).not.toHaveProperty('pae')
+    expect(json.parameters).not.toHaveProperty('pae_flex_threshold')
+  })
+
+  it('Phase-1 output is byte-identical (no PAE keys) when neither flag is set', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'phase1-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams
+    })
+    // Must match the exact Phase-1 shape
+    expect(Object.keys(json.parameters).sort()).toEqual(
+      [
+        'fit_n_times',
+        'min_q',
+        'max_q',
+        'max_q_start',
+        'max_fit_steps',
+        'mixture_n',
+        'rotation'
+      ].sort()
+    )
+  })
 })
 
 describe('buildCarbonaraContainerArgs', () => {
