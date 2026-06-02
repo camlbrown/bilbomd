@@ -37,6 +37,16 @@ export interface FlexSegment {
   stop: number
 }
 
+// A distance-constraint pair to draw as a dashed line in the viewer.
+// chain1/chain2 are auth_asym_id letters; res1/res2 are PDB (auth) residue
+// numbers. The line connects the two Cα atoms.
+export interface ViewerConstraint {
+  chain1: string
+  res1: number
+  chain2: string
+  res2: number
+}
+
 interface CarbonaraStructureViewerProps {
   // The uploaded structure file (a Formik File value) or raw structure text.
   structureFile?: File | string
@@ -44,9 +54,14 @@ interface CarbonaraStructureViewerProps {
   flexSegments?: FlexSegment[]
   // Chain identifiers (auth_asym_id) to hide in the viewer.
   hiddenChains?: string[]
+  // Distance-constraint pairs to draw as dashed lines between Cα atoms.
+  constraints?: ViewerConstraint[]
   // Reports the structure's chain identifiers (auth_asym_id) in document order
   // once a structure has loaded, so the form can build chain controls.
   onChainsDetected?: (chains: string[]) => void
+  // Reports how many constraint pairs were actually located + drawn (so the form
+  // can flag pairs whose residue/chain weren't found in the structure).
+  onConstraintsDrawn?: (drawn: number) => void
   height?: number
 }
 
@@ -130,12 +145,17 @@ const CarbonaraStructureViewer = ({
   structureFile,
   flexSegments = [],
   hiddenChains = [],
+  constraints = [],
   onChainsDetected,
+  onConstraintsDrawn,
   height = 460
 }: CarbonaraStructureViewerProps) => {
   const parentRef = useRef<HTMLDivElement>(null)
   const pluginRef = useRef<PluginUIContext | null>(null)
   const chainOrderRef = useRef<string[]>([])
+  // State refs of the distance-measurement objects we created, so we can remove
+  // them before re-drawing when the constraints change.
+  const measurementRefsRef = useRef<string[]>([])
   const [pluginReady, setPluginReady] = useState(false)
   const [structureLoaded, setStructureLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -197,6 +217,7 @@ const CarbonaraStructureViewer = ({
       setAutoAssigned(0)
       await plugin.clear()
       chainOrderRef.current = []
+      measurementRefsRef.current = []
       if (!structureFile) return
 
       try {
@@ -366,6 +387,75 @@ const CarbonaraStructureViewer = ({
       cancelled = true
     }
   }, [hiddenChains, structureLoaded])
+
+  // Draw a dashed distance line (+ measured-distance label) between the Cα atoms
+  // of each constraint pair. Re-runs when the constraints change.
+  useEffect(() => {
+    const plugin = pluginRef.current
+    if (!plugin || !structureLoaded) return
+    let cancelled = false
+
+    const caLoci = (structure: Structure, chain: string, res: number) => {
+      const expr = MS.struct.generator.atomGroups({
+        'chain-test': MS.core.rel.eq([MS.ammp('auth_asym_id'), chain]),
+        'residue-test': MS.core.rel.eq([MS.ammp('auth_seq_id'), res]),
+        'atom-test': MS.core.rel.eq([MS.ammp('label_atom_id'), 'CA'])
+      })
+      const sel = Script.getStructureSelection(expr, structure)
+      return StructureSelection.toLociWithSourceUnits(sel)
+    }
+
+    const apply = async () => {
+      // Remove previously drawn measurement lines.
+      if (measurementRefsRef.current.length > 0) {
+        const b = plugin.state.data.build()
+        for (const ref of measurementRefsRef.current) {
+          try {
+            b.delete(ref)
+          } catch {
+            // already gone
+          }
+        }
+        await b.commit()
+        measurementRefsRef.current = []
+      }
+      if (cancelled || constraints.length === 0) {
+        onConstraintsDrawn?.(0)
+        return
+      }
+
+      const structure =
+        plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj
+          ?.data
+      if (!structure) return
+
+      let drawn = 0
+      for (const c of constraints) {
+        const a = caLoci(structure, c.chain1, c.res1)
+        const d = caLoci(structure, c.chain2, c.res2)
+        if (a.elements.length === 0 || d.elements.length === 0) continue
+        const result =
+          await plugin.managers.structure.measurement.addDistance(a, d, {
+            // 4× the default line thickness (0.075) and 10× the default label
+            // size (0.33) so constraints read clearly in the viewer.
+            visualParams: { linesSize: 0.3, textSize: 3.3 }
+          })
+        if (cancelled) return
+        if (result?.selection?.ref) {
+          measurementRefsRef.current.push(result.selection.ref)
+        }
+        drawn += 1
+      }
+      onConstraintsDrawn?.(drawn)
+    }
+
+    void apply()
+    return () => {
+      cancelled = true
+    }
+    // onConstraintsDrawn intentionally omitted: callers pass a stable callback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [constraints, structureLoaded])
 
   return (
     <Box>

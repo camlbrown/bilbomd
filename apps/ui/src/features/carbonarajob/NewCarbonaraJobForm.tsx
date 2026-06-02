@@ -42,7 +42,8 @@ import useTitle from 'hooks/useTitle'
 import JobSuccessAlert from 'features/jobs/JobSuccessAlert'
 import InitialFitChart from 'features/carbonarajob/InitialFitChart'
 import CarbonaraStructureViewer, {
-  FlexSegment
+  FlexSegment,
+  ViewerConstraint
 } from 'features/carbonarajob/CarbonaraStructureViewer'
 import { carbonaraChainColorHex } from 'features/carbonarajob/carbonaraChainPalette'
 import CarbonaraPaePlot from 'features/carbonarajob/CarbonaraPaePlot'
@@ -110,6 +111,59 @@ const submitErrorMessage = (err: unknown, what: string): string => {
   if (detail) return `Failed to submit ${what} request: ${detail}`
   if (e?.status) return `Failed to submit ${what} request (${e.status})`
   return `Failed to submit ${what} request`
+}
+
+// Parse a user constraints file into viewer constraints. One pair per line:
+// "res1 chain1 res2 chain2 [distance]" — chains are letters, residues are the
+// numbers shown in the viewer. Blank / '#'-comment / short lines are skipped.
+const parseConstraintsText = (text: string): ViewerConstraint[] => {
+  const out: ViewerConstraint[] = []
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const p = line.split(/\s+/)
+    if (p.length < 4) continue
+    const res1 = parseInt(p[0]!, 10)
+    const chain1 = p[1]!
+    const res2 = parseInt(p[2]!, 10)
+    const chain2 = p[3]!
+    if (Number.isFinite(res1) && Number.isFinite(res2) && chain1 && chain2) {
+      out.push({ chain1, res1, chain2, res2 })
+    }
+  }
+  return out
+}
+
+// Reads the uploaded constraints file (when file mode is active) and reports the
+// parsed pairs. Rendered inside the Formik tree so it sees the current value.
+const ConstraintsFileParser = ({
+  file,
+  active,
+  onParsed
+}: {
+  file: File | string
+  active: boolean
+  onParsed: (c: ViewerConstraint[]) => void
+}) => {
+  useEffect(() => {
+    let cancelled = false
+    if (!active || !(file instanceof File)) {
+      onParsed([])
+      return
+    }
+    file
+      .text()
+      .then((t) => {
+        if (!cancelled) onParsed(parseConstraintsText(t))
+      })
+      .catch(() => {
+        if (!cancelled) onParsed([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [file, active, onParsed])
+  return null
 }
 
 // B5: fire the initial-fit preview ONLY when the inputs actually change, via an
@@ -476,6 +530,32 @@ const NewCarbonaraJobForm = () => {
   const [constraintPairs, setConstraintPairs] = useState<ConstraintPairRow[]>([
     emptyPairRow()
   ])
+  // How many constraint pairs the viewer actually located + drew.
+  const [constraintsDrawn, setConstraintsDrawn] = useState(0)
+  // Pairs parsed from an uploaded constraints file (file mode).
+  const [fileConstraints, setFileConstraints] = useState<ViewerConstraint[]>([])
+
+  // B3: valid constraint pairs to draw as dashed lines in the 3D viewer.
+  // chain1/chain2 are auth_asym_id letters; res are the residue numbers shown in
+  // the viewer. Sourced from the pairs editor or the uploaded file.
+  const viewerConstraints = useMemo<ViewerConstraint[]>(() => {
+    if (constraintsMethod === 'file') return fileConstraints
+    if (constraintsMethod !== 'pairs') return []
+    return constraintPairs
+      .map((p) => ({
+        chain1: p.chain1.trim(),
+        res1: parseInt(p.res1, 10),
+        chain2: p.chain2.trim(),
+        res2: parseInt(p.res2, 10)
+      }))
+      .filter(
+        (c) =>
+          c.chain1 !== '' &&
+          c.chain2 !== '' &&
+          Number.isFinite(c.res1) &&
+          Number.isFinite(c.res2)
+      )
+  }, [constraintsMethod, constraintPairs, fileConstraints])
 
   // Debounced trigger: called when pdb_file, dat_file, or max_q change
   const triggerPreviewDebounced = useCallback(
@@ -685,9 +765,9 @@ const NewCarbonaraJobForm = () => {
                   </Alert>
                 )}
 
-                {/* ── Block 1: Setup & Initial Fit ─────────────────────── */}
+                {/* ── Block 1: Initial scattering check ────────────────── */}
                 <HeaderBox>
-                  <Typography>1 · Setup &amp; Initial Fit</Typography>
+                  <Typography>1 · Initial Scattering Check</Typography>
                 </HeaderBox>
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <Grid
@@ -838,18 +918,30 @@ const NewCarbonaraJobForm = () => {
                   </Grid>
                 </Paper>
 
-                {/* ── Block 2: Flexibility ─────────────────────────────── */}
+                {/* ── Block 2: Conformational Sampling ─────────────────── */}
+                {/* One block: shared 3D viewer at the top, then Flexibility,
+                    Distance constraints and Oligomeric state as sub-blocks whose
+                    selections all render in the viewer above. */}
                 <HeaderBox>
-                  <Typography>2 · Flexibility</Typography>
+                  <Typography>2 · Conformational Sampling</Typography>
                 </HeaderBox>
                 <Paper sx={{ p: 2, mb: 2 }}>
                   {/* B2: interactive 3D viewer — hover a residue for its name,
-                      number and chain; flexible segments are highlighted yellow. */}
+                      number and chain; flexible segments are highlighted yellow,
+                      distance constraints drawn as dashed lines. */}
                   <CarbonaraStructureViewer
                     structureFile={values.pdb_file}
                     flexSegments={flexSegments}
                     hiddenChains={hiddenChains}
+                    constraints={viewerConstraints}
                     onChainsDetected={handleChainsDetected}
+                    onConstraintsDrawn={setConstraintsDrawn}
+                  />
+                  {/* Parses an uploaded constraints file into viewer lines. */}
+                  <ConstraintsFileParser
+                    file={values.constraints_file}
+                    active={constraintsMethod === 'file'}
+                    onParsed={setFileConstraints}
                   />
                   {viewerChains.length > 0 && (
                     <Stack
@@ -900,6 +992,20 @@ const NewCarbonaraJobForm = () => {
                       })}
                     </Stack>
                   )}
+                  {/* ── sub-block: Flexibility ── */}
+                  <Typography
+                    variant="subtitle1"
+                    sx={{
+                      fontWeight: 700,
+                      mt: 3,
+                      mb: 1,
+                      pt: 2,
+                      borderTop: '2px solid',
+                      borderColor: 'divider'
+                    }}
+                  >
+                    Flexibility
+                  </Typography>
                   <Box sx={{ mt: 1, mb: 1 }}>
                     <FormControl component="fieldset">
                       <FormLabel
@@ -1355,13 +1461,20 @@ const NewCarbonaraJobForm = () => {
                       )}
                     </Box>
                   </Box>
-                </Paper>
-
-                {/* ── Block 3: Distance Constraints ───────────────────── */}
-                <HeaderBox>
-                  <Typography>3 · Distance Constraints</Typography>
-                </HeaderBox>
-                <Paper sx={{ p: 2, mb: 2 }}>
+                  {/* ── sub-block: Distance constraints ── */}
+                  <Typography
+                    variant="subtitle1"
+                    sx={{
+                      fontWeight: 700,
+                      mt: 3,
+                      mb: 1,
+                      pt: 2,
+                      borderTop: '2px solid',
+                      borderColor: 'divider'
+                    }}
+                  >
+                    Distance constraints
+                  </Typography>
                   <Box sx={{ mt: 1, mb: 1 }}>
                     <RadioGroup
                       row
@@ -1390,35 +1503,64 @@ const NewCarbonaraJobForm = () => {
                     </RadioGroup>
 
                     {constraintsMethod === 'file' && (
-                      <Grid sx={{ mt: 0.5 }}>
-                        <Field
-                          name="constraints_file"
-                          id="constraints-file-upload"
-                          as={FileSelect}
-                          title="Select File"
-                          disabled={isSubmitting}
-                          setFieldValue={setFieldValue}
-                          setFieldTouched={setFieldTouched}
-                          error={
-                            errors.constraints_file &&
-                            touched.constraints_file
-                          }
-                          errorMessage={
-                            errors.constraints_file
-                              ? errors.constraints_file
-                              : ''
-                          }
-                          fileType="constraints *.dat or *.txt"
-                          fileExt=".dat,.txt"
-                        />
-                      </Grid>
+                      <Box sx={{ mt: 0.5 }}>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: 'block', mb: 0.5 }}
+                        >
+                          One pair per line:{' '}
+                          <code>res1 chain1 res2 chain2 distance</code> — using
+                          the chain letters and residue numbers shown in the
+                          viewer.
+                        </Typography>
+                        <Grid>
+                          <Field
+                            name="constraints_file"
+                            id="constraints-file-upload"
+                            as={FileSelect}
+                            title="Select File"
+                            disabled={isSubmitting}
+                            setFieldValue={setFieldValue}
+                            setFieldTouched={setFieldTouched}
+                            error={
+                              errors.constraints_file &&
+                              touched.constraints_file
+                            }
+                            errorMessage={
+                              errors.constraints_file
+                                ? errors.constraints_file
+                                : ''
+                            }
+                            fileType="constraints *.dat or *.txt"
+                            fileExt=".dat,.txt"
+                          />
+                        </Grid>
+                        {viewerConstraints.length > 0 && (
+                          <Typography
+                            variant="caption"
+                            color={
+                              constraintsDrawn < viewerConstraints.length
+                                ? 'warning.main'
+                                : 'text.secondary'
+                            }
+                            sx={{ display: 'block', mt: 0.5 }}
+                          >
+                            {constraintsDrawn === viewerConstraints.length
+                              ? `Parsed ${viewerConstraints.length} pair(s); showing ${constraintsDrawn} in the viewer above.`
+                              : `Parsed ${viewerConstraints.length} pair(s) but only ${constraintsDrawn} mapped — the rest reference a residue/chain not found (check the format, chain letters and residue numbers).`}
+                          </Typography>
+                        )}
+                      </Box>
                     )}
 
                     {constraintsMethod === 'pairs' && (
                       <Box sx={{ mt: 1 }}>
                         <Typography variant="caption" color="text.secondary">
                           Format: residue number, chain letter for each end of
-                          the pair; optional target distance in Å.
+                          the pair; optional target distance in Å. Each complete
+                          pair is drawn as a dashed line (with its current Cα–Cα
+                          distance) in the 3D viewer above.
                         </Typography>
                         {constraintPairs.map((pair, idx) => (
                           <Box
@@ -1540,16 +1682,39 @@ const NewCarbonaraJobForm = () => {
                         >
                           Add pair
                         </Button>
+                        {viewerConstraints.length > 0 && (
+                          <Typography
+                            variant="caption"
+                            color={
+                              constraintsDrawn < viewerConstraints.length
+                                ? 'warning.main'
+                                : 'text.secondary'
+                            }
+                            sx={{ display: 'block', mt: 1 }}
+                          >
+                            {constraintsDrawn === viewerConstraints.length
+                              ? `Showing ${constraintsDrawn} constraint line(s) in the viewer above.`
+                              : `Showing ${constraintsDrawn} of ${viewerConstraints.length} pair(s). The rest reference a residue/chain not found — check the chain letter and that the residue number exists in that chain.`}
+                          </Typography>
+                        )}
                       </Box>
                     )}
                   </Box>
-                </Paper>
 
-                {/* ── Block 4: Oligomeric State ────────────────────────── */}
-                <HeaderBox>
-                  <Typography>4 · Oligomeric State</Typography>
-                </HeaderBox>
-                <Paper sx={{ p: 2, mb: 2 }}>
+                  {/* ── sub-block: Oligomeric state ── */}
+                  <Typography
+                    variant="subtitle1"
+                    sx={{
+                      fontWeight: 700,
+                      mt: 3,
+                      mb: 1,
+                      pt: 2,
+                      borderTop: '2px solid',
+                      borderColor: 'divider'
+                    }}
+                  >
+                    Oligomeric state
+                  </Typography>
                   {/* B8: multimer mode toggle (top-level pathway choice) */}
                   <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
                     <FormControlLabel
@@ -1738,9 +1903,9 @@ const NewCarbonaraJobForm = () => {
                   )}
                 </Paper>
 
-                {/* ── Block 5: Fitting ─────────────────────────────────── */}
+                {/* ── Block 3: Fitting ─────────────────────────────────── */}
                 <HeaderBox>
-                  <Typography>5 · Fitting</Typography>
+                  <Typography>3 · Fitting</Typography>
                 </HeaderBox>
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <Box sx={{ display: 'flex', gap: 2, my: 2 }}>
