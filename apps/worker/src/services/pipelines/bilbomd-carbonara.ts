@@ -210,18 +210,15 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         await fs.ensureDir(outRootHost)
 
         const saxsInContainer = `${scenarioRoot}/Saxs.dat`
-        const disulfideHostPath = path.join(
-          workDir,
-          'work',
-          foundJob.uuid,
-          'carbonara_runs',
-          foundJob.uuid,
-          'fixedDistanceConstraints1.dat'
-        )
-        const disulfideExists = await fs.pathExists(disulfideHostPath)
-        const disulfideInContainer = disulfideExists
-          ? `${scenarioRoot}/fixedDistanceConstraints1.dat`
-          : undefined
+        // R0: do NOT pass the distance-constraints file as backmap's disulfide
+        // file. Doing so makes backmap emit SSBOND records, which the cg2all
+        // build cannot process (it crashes on disulfide cysteines — an SSBOND
+        // column misread, then a CYS-topology 'HG1' error), aborting all-atom
+        // reconstruction. cg2all does not enforce disulfide geometry anyway, and
+        // distance constraints are not necessarily disulfides — so we
+        // reconstruct without SSBOND. Real disulfide support would need a cg2all
+        // build that handles CYS2/CYX.
+        const disulfideInContainer = undefined
 
         const tasks = buildReconstructionPlan({
           coordsFiles,
