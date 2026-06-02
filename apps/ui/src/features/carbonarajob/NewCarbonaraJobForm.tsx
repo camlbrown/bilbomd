@@ -18,7 +18,9 @@ import {
   FormLabel,
   CircularProgress,
   Chip,
-  Stack
+  Stack,
+  ToggleButton,
+  ToggleButtonGroup
 } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { Form, Formik, Field, FormikHelpers } from 'formik'
@@ -64,13 +66,6 @@ interface FlexRangeRow {
   stop: string
 }
 
-// B8: one row in the chain-merge editor.
-// Both indices are 1-based; they renumber after each merge.
-interface ChainMergeRow {
-  chainI: string
-  chainJ: string
-}
-
 interface CarbonaraJobFormValues {
   title: string
   pdb_file: string
@@ -97,7 +92,35 @@ const emptyPairRow = (): ConstraintPairRow => ({
 })
 
 const emptyFlexRow = (): FlexRangeRow => ({ chain: '1', start: '', stop: '' })
-const emptyMergeRow = (): ChainMergeRow => ({ chainI: '1', chainJ: '2' })
+
+// Translate user-defined subunit groups (sets of chain ids merged into one rigid
+// subunit) into the sequential, renumbering 1-based chain-index pairs that the
+// Carbonara wrapper's apply_merges expects. chainOrder is the chains in document
+// order (Carbonara numbers chains the same way). Merging (lo,hi) puts the result
+// at lo and removes hi, so later positions shift down by one — we simulate that.
+const groupsToMergePairs = (
+  chainOrder: string[],
+  groups: string[][]
+): number[][] => {
+  const current: string[][] = chainOrder.map((id) => [id])
+  const pairs: number[][] = []
+  const posOf = (id: string): number =>
+    current.findIndex((arr) => arr.includes(id))
+  for (const group of groups) {
+    const members = group.filter((id) => chainOrder.includes(id))
+    for (let m = 1; m < members.length; m++) {
+      const a = posOf(members[0]!)
+      const b = posOf(members[m]!)
+      if (a < 0 || b < 0 || a === b) continue
+      const lo = Math.min(a, b)
+      const hi = Math.max(a, b)
+      pairs.push([lo + 1, hi + 1])
+      current[lo] = [...current[lo]!, ...current[hi]!]
+      current.splice(hi, 1)
+    }
+  }
+  return pairs
+}
 
 // Surface the real reason a prepare-step submission failed (RTK Query throws an
 // object with status/data) so an expired session etc. is visible rather than a
@@ -461,9 +484,39 @@ const NewCarbonaraJobForm = () => {
     setFlexMode('manual')
   }, [autoFlexRanges])
 
-  // B8: multimer mode toggle and chain-merge editor rows
-  const [multimer, setMultimer] = useState<boolean>(false)
-  const [mergeRows, setMergeRows] = useState<ChainMergeRow[]>([emptyMergeRow()])
+  // B4: oligomeric state + affine-rotation + chain-merge subunits.
+  // Merging is only relevant for affine rotations, so it's gated under
+  // Multimer -> affine rotation. mergeGroups: each inner array is a set of
+  // chain ids merged into one rigid subunit (rotates together).
+  const [oligomericState, setOligomericState] = useState<
+    'monomer' | 'multimer'
+  >('monomer')
+  const [affineRotation, setAffineRotation] = useState<boolean>(false)
+  const [mergeGroups, setMergeGroups] = useState<string[][]>([])
+  const [mergeSelection, setMergeSelection] = useState<string[]>([])
+
+  const toggleMergeSelect = useCallback((id: string) => {
+    setMergeSelection((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
+    )
+  }, [])
+
+  const mergeSelected = useCallback(() => {
+    setMergeGroups((prev) => {
+      if (mergeSelection.length < 2) return prev
+      // Remove the selected chains from any existing group, drop groups that
+      // fall below 2 members, then add the new group.
+      const cleaned = prev
+        .map((g) => g.filter((id) => !mergeSelection.includes(id)))
+        .filter((g) => g.length > 1)
+      return [...cleaned, [...mergeSelection]]
+    })
+    setMergeSelection([])
+  }, [mergeSelection])
+
+  const clearMergeGroup = useCallback((idx: number) => {
+    setMergeGroups((prev) => prev.filter((_, i) => i !== idx))
+  }, [])
 
   // B7: 3-way flexibility mode selector (replaces the PAE checkbox)
   const [flexMode, setFlexMode] = useState<'auto' | 'manual'>('auto')
@@ -488,7 +541,32 @@ const NewCarbonaraJobForm = () => {
     setPaeFlexStatus('idle')
     setPaeFlexRanges([])
     setPaeFlexError(null)
+    setMergeGroups([])
+    setMergeSelection([])
   }, [])
+
+  // B4: per-chain colour map. When affine-rotation merging is active each merged
+  // subunit shares the colour of its lowest-index chain; otherwise each chain
+  // keeps its own palette colour. Used by both the viewer and the chain chips so
+  // they always agree.
+  const chainColorMap = useMemo<Record<string, string>>(() => {
+    const applyMerges = oligomericState === 'multimer' && affineRotation
+    const map: Record<string, string> = {}
+    viewerChains.forEach((id, i) => {
+      const group = applyMerges
+        ? mergeGroups.find((g) => g.includes(id))
+        : undefined
+      if (group && group.length > 1) {
+        const anchor = Math.min(
+          ...group.map((g) => viewerChains.indexOf(g)).filter((x) => x >= 0)
+        )
+        map[id] = carbonaraChainColorHex(anchor)
+      } else {
+        map[id] = carbonaraChainColorHex(i)
+      }
+    })
+    return map
+  }, [viewerChains, mergeGroups, oligomericState, affineRotation])
 
   const toggleChainVisibility = useCallback((chainId: string) => {
     setHiddenChains((prev) =>
@@ -616,7 +694,10 @@ const NewCarbonaraJobForm = () => {
     form.append('min_q', values.min_q.toString())
     form.append('max_q', values.max_q.toString())
     form.append('max_fit_steps', values.max_fit_steps.toString())
-    form.append('rotation', values.rotation.toString())
+    // B4: affine rotation only applies to a multimer.
+    const isMultimer = oligomericState === 'multimer'
+    const affineOn = isMultimer && affineRotation
+    form.append('rotation', affineOn.toString())
     form.append('all_atom', values.all_atom.toString())
     form.append('do_foxs', values.do_foxs.toString())
 
@@ -661,17 +742,12 @@ const NewCarbonaraJobForm = () => {
         form.append('constraints_pairs', JSON.stringify(validPairs))
       }
     }
-    // B8: multimer + chain merges
-    form.append('multimer', multimer.toString())
-    if (multimer) {
-      const validMerges = mergeRows.filter(
-        (r) => r.chainI && r.chainJ && r.chainI !== r.chainJ
-      )
-      if (validMerges.length > 0) {
-        const merges = validMerges.map((r) => [
-          parseInt(r.chainI, 10),
-          parseInt(r.chainJ, 10)
-        ])
+    // B4: multimer + chain merges (chain_merges only apply to affine rotation —
+    // they define which chains rotate together as one rigid subunit).
+    form.append('multimer', isMultimer.toString())
+    if (affineOn && mergeGroups.length > 0) {
+      const merges = groupsToMergePairs(viewerChains, mergeGroups)
+      if (merges.length > 0) {
         form.append('chain_merges', JSON.stringify(merges))
       }
     }
@@ -934,6 +1010,7 @@ const NewCarbonaraJobForm = () => {
                     flexSegments={flexSegments}
                     hiddenChains={hiddenChains}
                     constraints={viewerConstraints}
+                    chainColors={chainColorMap}
                     onChainsDetected={handleChainsDetected}
                     onConstraintsDrawn={setConstraintsDrawn}
                   />
@@ -962,7 +1039,7 @@ const NewCarbonaraJobForm = () => {
                       </Typography>
                       {viewerChains.map((c, i) => {
                         const visible = !hiddenChains.includes(c)
-                        const col = carbonaraChainColorHex(i)
+                        const col = chainColorMap[c] ?? carbonaraChainColorHex(i)
                         return (
                           <Chip
                             key={c}
@@ -1715,190 +1792,222 @@ const NewCarbonaraJobForm = () => {
                   >
                     Oligomeric state
                   </Typography>
-                  {/* B8: multimer mode toggle (top-level pathway choice) */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={multimer}
-                          onChange={(e) => setMultimer(e.target.checked)}
-                          disabled={isSubmitting}
-                          slotProps={{
-                            input: { 'aria-label': 'multimer-checkbox' }
-                          }}
-                        />
-                      }
-                      label="Multimer mode (enable chain merging)"
-                    />
-                  </Box>
+                  {/* B4: Monomer | Multimer selection (the single gate). */}
+                  <ToggleButtonGroup
+                    exclusive
+                    size="small"
+                    value={oligomericState}
+                    onChange={(_e, v) => {
+                      if (!v) return
+                      setOligomericState(v)
+                      if (v === 'monomer') setAffineRotation(false)
+                    }}
+                    sx={{ mt: 1 }}
+                  >
+                    <ToggleButton
+                      value="monomer"
+                      disabled={isSubmitting}
+                    >
+                      Monomer
+                    </ToggleButton>
+                    <ToggleButton
+                      value="multimer"
+                      disabled={isSubmitting}
+                    >
+                      Multimer
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: 'block', mt: 0.5 }}
+                  >
+                    {oligomericState === 'monomer'
+                      ? 'A single subunit — no inter-subunit rotation.'
+                      : 'Multiple subunits — Carbonara can sample rigid-body (affine) rotations of subunits about one another.'}
+                  </Typography>
 
-                  {/* Rotation: shown when NOT in multimer mode */}
-                  {!multimer && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-                      <Field name="rotation">
-                        {({
-                          field
-                        }: {
-                          field: {
-                            name: string
-                            value: boolean
-                            onChange: (
-                              e: React.ChangeEvent<HTMLInputElement>
-                            ) => void
-                          }
-                        }) => (
-                          <FormControlLabel
-                            control={
-                              <Checkbox
-                                checked={field.value}
-                                onChange={field.onChange}
-                                name={field.name}
-                                disabled={isSubmitting}
-                                slotProps={{
-                                  input: { 'aria-label': 'rotation-checkbox' }
-                                }}
-                              />
+                  {oligomericState === 'multimer' && (
+                    <Box sx={{ ml: 1, mt: 1 }}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={affineRotation}
+                            onChange={(e) =>
+                              setAffineRotation(e.target.checked)
                             }
-                            label="Allow affine rotation during fitting"
+                            disabled={isSubmitting}
+                            size="small"
+                            slotProps={{
+                              input: { 'aria-label': 'affine-rotation-checkbox' }
+                            }}
                           />
-                        )}
-                      </Field>
-                    </Box>
-                  )}
-
-                  {/* B8: multimer chain-merge editor */}
-                  {multimer && (
-                    <Box sx={{ mt: 2, mb: 1 }}>
-                      <Typography
-                        variant="subtitle2"
-                        sx={{ mb: 0.5, fontWeight: 600 }}
-                      >
-                        Chain merges (multimer)
-                      </Typography>
+                        }
+                        label="Sample affine rotations of subunits"
+                      />
                       <Typography
                         variant="caption"
                         color="text.secondary"
                         sx={{ display: 'block', mb: 1 }}
                       >
-                        Merges are applied in order. After each merge the
-                        remaining chains are renumbered, so later pairs use the
-                        updated numbering. Chain 1 = first chain.
+                        During sampling, subunits are rotated rigidly about one
+                        another. By default each chain is its own subunit. Merge
+                        chains below so they rotate together as one subunit (e.g.
+                        an antibody F(ab) arm = one heavy + one light chain).
                       </Typography>
-                      {mergeRows.map((row, idx) => (
-                        <Box
-                          key={idx}
-                          sx={{
-                            display: 'flex',
-                            gap: 1,
-                            mt: 1,
-                            alignItems: 'center'
-                          }}
-                        >
-                          <TextField
-                            label="Chain i"
-                            size="small"
-                            type="number"
-                            value={row.chainI}
-                            onChange={(e) => {
-                              const updated = mergeRows.map(
-                                (r, i): ChainMergeRow =>
-                                  i === idx
-                                    ? { ...r, chainI: e.target.value }
-                                    : r
-                              )
-                              setMergeRows(updated)
-                            }}
-                            sx={{ width: '80px' }}
-                            disabled={isSubmitting}
-                            slotProps={{
-                              htmlInput: {
-                                min: 1,
-                                'aria-label': `merge-chain-i-${idx}`
-                              }
-                            }}
-                          />
-                          <TextField
-                            label="Chain j"
-                            size="small"
-                            type="number"
-                            value={row.chainJ}
-                            onChange={(e) => {
-                              const updated = mergeRows.map(
-                                (r, i): ChainMergeRow =>
-                                  i === idx
-                                    ? { ...r, chainJ: e.target.value }
-                                    : r
-                              )
-                              setMergeRows(updated)
-                            }}
-                            sx={{ width: '80px' }}
-                            disabled={isSubmitting}
-                            slotProps={{
-                              htmlInput: {
-                                min: 1,
-                                'aria-label': `merge-chain-j-${idx}`
-                              }
-                            }}
-                          />
-                          <IconButton
-                            size="small"
-                            disabled={isSubmitting || mergeRows.length <= 1}
-                            onClick={() =>
-                              setMergeRows(
-                                mergeRows.filter((_, i) => i !== idx)
-                              )
-                            }
-                            aria-label="remove-merge-row"
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Box>
-                      ))}
-                      <Button
-                        size="small"
-                        startIcon={<AddIcon />}
-                        onClick={() =>
-                          setMergeRows([...mergeRows, emptyMergeRow()])
-                        }
-                        disabled={isSubmitting}
-                        sx={{ mt: 1 }}
-                      >
-                        Add merge
-                      </Button>
 
-                      {/* Rotation grouped into multimer section */}
-                      <Box sx={{ mt: 1 }}>
-                        <Field name="rotation">
-                          {({
-                            field
-                          }: {
-                            field: {
-                              name: string
-                              value: boolean
-                              onChange: (
-                                e: React.ChangeEvent<HTMLInputElement>
-                              ) => void
-                            }
-                          }) => (
-                            <FormControlLabel
-                              control={
-                                <Checkbox
-                                  checked={field.value}
-                                  onChange={field.onChange}
-                                  name={field.name}
-                                  disabled={isSubmitting}
-                                  slotProps={{
-                                    input: {
-                                      'aria-label': 'rotation-checkbox'
-                                    }
-                                  }}
+                      {affineRotation && (
+                        <Box sx={{ mt: 1 }}>
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ fontWeight: 600 }}
+                          >
+                            Subunits (merge chains)
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: 'block', mb: 1 }}
+                          >
+                            Select two or more chains and merge them into one
+                            subunit. Merged chains share a colour in the viewer
+                            and rotate together; each unmerged chain is its own
+                            subunit.
+                          </Typography>
+
+                          {viewerChains.length === 0 ? (
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                            >
+                              Upload a structure to choose subunits.
+                            </Typography>
+                          ) : (
+                            <>
+                              <Stack
+                                direction="row"
+                                sx={{
+                                  flexWrap: 'wrap',
+                                  gap: 0.5,
+                                  alignItems: 'center'
+                                }}
+                              >
+                                {viewerChains.map((c, i) => {
+                                  const selected = mergeSelection.includes(c)
+                                  const col =
+                                    chainColorMap[c] ??
+                                    carbonaraChainColorHex(i)
+                                  return (
+                                    <Chip
+                                      key={c}
+                                      size="small"
+                                      label={c}
+                                      onClick={() => toggleMergeSelect(c)}
+                                      variant={selected ? 'filled' : 'outlined'}
+                                      sx={
+                                        selected
+                                          ? {
+                                              backgroundColor: col,
+                                              color: '#fff',
+                                              outline: '2px solid #222'
+                                            }
+                                          : { borderColor: col, color: col }
+                                      }
+                                    />
+                                  )
+                                })}
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  disabled={
+                                    isSubmitting || mergeSelection.length < 2
+                                  }
+                                  onClick={mergeSelected}
+                                  sx={{ ml: 1 }}
+                                >
+                                  Merge selected
+                                </Button>
+                              </Stack>
+
+                              {mergeGroups.length > 0 && (
+                                <Box sx={{ mt: 1 }}>
+                                  <Typography
+                                    variant="caption"
+                                    color="text.secondary"
+                                    sx={{ display: 'block' }}
+                                  >
+                                    Merged subunits (each shown as a single
+                                    colour in the 3D viewer above):
+                                  </Typography>
+                                  {mergeGroups.map((g, idx) => {
+                                    const anchor = Math.min(
+                                      ...g
+                                        .map((id) => viewerChains.indexOf(id))
+                                        .filter((x) => x >= 0)
+                                    )
+                                    const col = carbonaraChainColorHex(anchor)
+                                    return (
+                                      <Box
+                                        key={idx}
+                                        sx={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 1,
+                                          mt: 0.5
+                                        }}
+                                      >
+                                        <Box
+                                          sx={{
+                                            width: 14,
+                                            height: 14,
+                                            borderRadius: '3px',
+                                            backgroundColor: col
+                                          }}
+                                        />
+                                        <Typography variant="body2">
+                                          {g.join(' + ')}
+                                        </Typography>
+                                        <IconButton
+                                          size="small"
+                                          onClick={() => clearMergeGroup(idx)}
+                                          disabled={isSubmitting}
+                                          aria-label="clear-merge"
+                                        >
+                                          <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                      </Box>
+                                    )
+                                  })}
+                                </Box>
+                              )}
+
+                              {/* Advanced residue-range merge — deferred:
+                                  Carbonara merges whole chains only. */}
+                              <Box sx={{ mt: 2 }}>
+                                <FormControlLabel
+                                  control={
+                                    <Checkbox
+                                      checked={false}
+                                      disabled
+                                      size="small"
+                                    />
+                                  }
+                                  label="Merge by residue range (advanced)"
                                 />
-                              }
-                              label="Allow affine rotation during fitting"
-                            />
+                                <Alert
+                                  severity="info"
+                                  variant="outlined"
+                                  sx={{ py: 0, mt: 0.5 }}
+                                >
+                                  Merging arbitrary residue ranges into a subunit
+                                  isn&apos;t supported yet — Carbonara currently
+                                  merges whole chains only. Coming later.
+                                </Alert>
+                              </Box>
+                            </>
                           )}
-                        </Field>
-                      </Box>
+                        </Box>
+                      )}
                     </Box>
                   )}
                 </Paper>

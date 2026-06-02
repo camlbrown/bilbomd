@@ -56,6 +56,10 @@ interface CarbonaraStructureViewerProps {
   hiddenChains?: string[]
   // Distance-constraint pairs to draw as dashed lines between Cα atoms.
   constraints?: ViewerConstraint[]
+  // Optional per-chain colour override (auth_asym_id -> hex). When set, a chain
+  // is painted this colour instead of the default palette — used to give merged
+  // subunits a shared colour.
+  chainColors?: Record<string, string>
   // Reports the structure's chain identifiers (auth_asym_id) in document order
   // once a structure has loaded, so the form can build chain controls.
   onChainsDetected?: (chains: string[]) => void
@@ -146,6 +150,7 @@ const CarbonaraStructureViewer = ({
   flexSegments = [],
   hiddenChains = [],
   constraints = [],
+  chainColors,
   onChainsDetected,
   onConstraintsDrawn,
   height = 460
@@ -305,14 +310,20 @@ const CarbonaraStructureViewer = ({
       await clearStructureOverpaint(plugin, components, ['cartoon'])
       if (cancelled) return
 
-      // Base colour per chain (matches the form's chain chips).
+      // Base colour per chain (matches the form's chain chips). A chainColors
+      // override (e.g. merged-subunit colours) takes precedence over the palette.
       const order = chainOrderRef.current
       for (let i = 0; i < order.length; i++) {
+        const id = order[i]!
+        const hex = chainColors?.[id]
+        const col = hex
+          ? Color(Number.parseInt(hex.replace('#', ''), 16))
+          : chainColor(i)
         await setStructureOverpaint(
           plugin,
           components,
-          chainColor(i),
-          overpaintLoci(chainsExpression([order[i]!])),
+          col,
+          overpaintLoci(chainsExpression([id])),
           ['cartoon']
         )
         if (cancelled) return
@@ -346,7 +357,7 @@ const CarbonaraStructureViewer = ({
     return () => {
       cancelled = true
     }
-  }, [flexSegments, structureLoaded])
+  }, [flexSegments, structureLoaded, chainColors])
 
   // Show/hide chains by making hidden chains fully transparent (works on the
   // preset's cartoon component — no per-chain rebuild needed).
