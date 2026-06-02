@@ -1,0 +1,429 @@
+import { useEffect, useRef, useState } from 'react'
+import Box from '@mui/material/Box'
+import Typography from '@mui/material/Typography'
+import { createPluginUI } from 'molstar/lib/mol-plugin-ui'
+import { renderReact18 } from 'molstar/lib/mol-plugin-ui/react18'
+import { DefaultPluginUISpec } from 'molstar/lib/mol-plugin-ui/spec'
+import { PluginUIContext } from 'molstar/lib/mol-plugin-ui/context'
+import { PluginConfig } from 'molstar/lib/mol-plugin/config'
+import { BuiltInTrajectoryFormat } from 'molstar/lib/mol-plugin-state/formats/trajectory'
+import {
+  setStructureOverpaint,
+  clearStructureOverpaint
+} from 'molstar/lib/mol-plugin-state/helpers/structure-overpaint'
+import {
+  setStructureTransparency,
+  clearStructureTransparency
+} from 'molstar/lib/mol-plugin-state/helpers/structure-transparency'
+import { Script } from 'molstar/lib/mol-script/script'
+import { MolScriptBuilder as MS } from 'molstar/lib/mol-script/language/builder'
+import {
+  Structure,
+  StructureElement,
+  StructureProperties,
+  StructureSelection
+} from 'molstar/lib/mol-model/structure'
+import { Color } from 'molstar/lib/mol-util/color'
+import { chainColor } from 'features/carbonarajob/carbonaraChainPalette'
+import 'molstar/lib/mol-plugin-ui/skin/light.scss'
+
+// A flexible residue segment to highlight in the viewer.
+// chain is 1-based (chain 1 = first chain in the structure), matching the
+// Carbonara/manual-range convention used elsewhere in the form. start/stop are
+// inclusive PDB (auth) residue numbers.
+export interface FlexSegment {
+  chain: number
+  start: number
+  stop: number
+}
+
+interface CarbonaraStructureViewerProps {
+  // The uploaded structure file (a Formik File value) or raw structure text.
+  structureFile?: File | string
+  // Segments to colour yellow as "flexible".
+  flexSegments?: FlexSegment[]
+  // Chain identifiers (auth_asym_id) to hide in the viewer.
+  hiddenChains?: string[]
+  // Reports the structure's chain identifiers (auth_asym_id) in document order
+  // once a structure has loaded, so the form can build chain controls.
+  onChainsDetected?: (chains: string[]) => void
+  height?: number
+}
+
+// Carbonara flexible-region colour (yellow), kept distinct from the blue/orange
+// domain colours used by the results-page MDConstraints viewer.
+const FLEX_COLOR = Color(0xfadb14)
+
+// Build a Mol* selection expression for one inclusive residue range on one chain.
+const segmentExpression = (chainId: string, start: number, stop: number) =>
+  MS.struct.generator.atomGroups({
+    'chain-test': MS.core.rel.eq([MS.ammp('auth_asym_id'), chainId]),
+    'residue-test': MS.core.logic.and([
+      MS.core.rel.gre([MS.ammp('auth_seq_id'), start]),
+      MS.core.rel.lte([MS.ammp('auth_seq_id'), stop])
+    ])
+  })
+
+// Build a Mol* selection expression for whole chains.
+const chainsExpression = (chainIds: string[]) =>
+  MS.struct.generator.atomGroups({
+    'chain-test': MS.core.set.has([
+      MS.set(...chainIds),
+      MS.ammp('auth_asym_id')
+    ])
+  })
+
+const CHAIN_LETTERS =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+
+// Some PDBs (e.g. cg2all output) leave the chain-ID column (col 22) blank and
+// mark chains only with TER records — exactly how Carbonara splits chains
+// (topology.chains). Mol* would then see one chain. When chain IDs are missing
+// we assign A, B, C… per TER block so the viewer's chains match Carbonara's
+// numbering (chain 1 = first TER block = 'A'), preserving residue numbers.
+const assignChainsByTer = (
+  pdbText: string
+): { text: string; assigned: boolean; nChains: number } => {
+  const lines = pdbText.split(/\r?\n/)
+  const hasChainId = lines.some(
+    (l) => /^(ATOM|HETATM)/.test(l) && l.length > 21 && l[21]!.trim() !== ''
+  )
+  if (hasChainId) return { text: pdbText, assigned: false, nChains: 0 }
+
+  let ci = 0
+  const used = new Set<number>()
+  const out = lines.map((l) => {
+    if (/^(ATOM|HETATM)/.test(l)) {
+      const idx = Math.min(ci, CHAIN_LETTERS.length - 1)
+      used.add(idx)
+      const padded = l.length < 22 ? l.padEnd(22, ' ') : l
+      return padded.slice(0, 21) + CHAIN_LETTERS[idx]! + padded.slice(22)
+    }
+    if (/^TER/.test(l)) {
+      ci += 1
+      return l
+    }
+    return l
+  })
+  return { text: out.join('\n'), assigned: true, nChains: used.size }
+}
+
+// Enumerate the structure's chains (auth_asym_id) in document order.
+const detectChains = (structure: Structure): string[] => {
+  const seen = new Set<string>()
+  const ordered: string[] = []
+  const loc = StructureElement.Location.create(structure)
+  for (const unit of structure.units) {
+    if (unit.elements.length === 0) continue
+    loc.unit = unit
+    loc.element = unit.elements[0]!
+    const id = StructureProperties.chain.auth_asym_id(loc)
+    if (!seen.has(id)) {
+      seen.add(id)
+      ordered.push(id)
+    }
+  }
+  return ordered
+}
+
+const CarbonaraStructureViewer = ({
+  structureFile,
+  flexSegments = [],
+  hiddenChains = [],
+  onChainsDetected,
+  height = 460
+}: CarbonaraStructureViewerProps) => {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const pluginRef = useRef<PluginUIContext | null>(null)
+  const chainOrderRef = useRef<string[]>([])
+  const [pluginReady, setPluginReady] = useState(false)
+  const [structureLoaded, setStructureLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Set when chain IDs were missing and we auto-assigned them from TER breaks.
+  const [autoAssigned, setAutoAssigned] = useState(0)
+
+  // Create one dedicated Mol* plugin instance for this viewer. It is kept on a
+  // ref (NOT window.molstar) so it never clashes with the results-page viewer.
+  useEffect(() => {
+    let disposed = false
+    const init = async () => {
+      if (!parentRef.current) return
+      const spec = DefaultPluginUISpec()
+      spec.layout = {
+        initial: {
+          isExpanded: false,
+          showControls: false,
+          controlsDisplay: 'reactive'
+        }
+      }
+      spec.config = [
+        [PluginConfig.Viewport.ShowExpand, true],
+        [PluginConfig.Viewport.ShowControls, true],
+        [PluginConfig.Viewport.ShowSettings, false],
+        [PluginConfig.Viewport.ShowSelectionMode, false],
+        [PluginConfig.Viewport.ShowAnimation, false]
+      ]
+      const plugin = await createPluginUI({
+        target: parentRef.current,
+        spec,
+        render: renderReact18
+      })
+      if (disposed) {
+        plugin.dispose()
+        return
+      }
+      pluginRef.current = plugin
+      setPluginReady(true)
+    }
+    void init()
+    return () => {
+      disposed = true
+      pluginRef.current?.dispose()
+      pluginRef.current = null
+      setPluginReady(false)
+      setStructureLoaded(false)
+    }
+  }, [])
+
+  // (Re)load the structure whenever the uploaded file changes.
+  useEffect(() => {
+    const plugin = pluginRef.current
+    if (!plugin || !pluginReady) return
+    let cancelled = false
+
+    const load = async () => {
+      setError(null)
+      setStructureLoaded(false)
+      setAutoAssigned(0)
+      await plugin.clear()
+      chainOrderRef.current = []
+      if (!structureFile) return
+
+      try {
+        const isFile = structureFile instanceof File
+        const fileName = isFile ? structureFile.name : 'structure'
+        let text = isFile
+          ? await structureFile.text()
+          : (structureFile as string)
+        if (!text || !text.trim()) return
+        const format: BuiltInTrajectoryFormat = fileName
+          .toLowerCase()
+          .endsWith('.cif')
+          ? 'mmcif'
+          : 'pdb'
+
+        // PDBs with no chain-ID column: assign chains from TER breaks so the
+        // viewer matches Carbonara's TER-based chain numbering.
+        if (format === 'pdb') {
+          const r = assignChainsByTer(text)
+          text = r.text
+          if (r.assigned && r.nChains > 1) setAutoAssigned(r.nChains)
+        }
+
+        const data = await plugin.builders.data.rawData({
+          data: text,
+          label: fileName
+        })
+        const trajectory = await plugin.builders.structure.parseTrajectory(
+          data,
+          format
+        )
+        // The built-in 'default' preset reliably builds the representations AND
+        // focuses the camera on the structure. Chain hide/show and the flexible
+        // highlight are then layered on via transparency/overpaint, which act on
+        // the preset's components without rebuilding them.
+        await plugin.builders.structure.hierarchy.applyPreset(
+          trajectory,
+          'default'
+        )
+        if (cancelled) return
+
+        const structure =
+          plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj
+            ?.data
+        chainOrderRef.current = structure ? detectChains(structure) : []
+        onChainsDetected?.(chainOrderRef.current)
+        setStructureLoaded(true)
+      } catch (err) {
+        console.error('Carbonara viewer failed to load structure:', err)
+        if (!cancelled) setError('Could not render this structure.')
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+    // onChainsDetected intentionally omitted: callers pass a stable callback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureFile, pluginReady])
+
+  // Colour each chain with its palette colour, then paint the flexible segments
+  // yellow on top. Re-runs whenever the flexible selection changes. Done in one
+  // effect because clearing overpaint wipes everything, so chain colours and the
+  // yellow highlight must be re-applied together.
+  useEffect(() => {
+    const plugin = pluginRef.current
+    if (!plugin || !structureLoaded) return
+    let cancelled = false
+
+    const overpaintLoci =
+      (expr: ReturnType<typeof MS.struct.combinator.merge>) =>
+      async (structure: Structure) => {
+        const sel = Script.getStructureSelection(expr, structure)
+        return StructureSelection.toLociWithSourceUnits(sel)
+      }
+
+    const paint = async () => {
+      const structureRef =
+        plugin.managers.structure.hierarchy.current.structures[0]
+      if (!structureRef) return
+      const components = structureRef.components
+      if (components.length === 0) return
+
+      await clearStructureOverpaint(plugin, components, ['cartoon'])
+      if (cancelled) return
+
+      // Base colour per chain (matches the form's chain chips).
+      const order = chainOrderRef.current
+      for (let i = 0; i < order.length; i++) {
+        await setStructureOverpaint(
+          plugin,
+          components,
+          chainColor(i),
+          overpaintLoci(chainsExpression([order[i]!])),
+          ['cartoon']
+        )
+        if (cancelled) return
+      }
+
+      // Flexible segments yellow, applied last so they win over the chain
+      // colour on the residues they cover. ALL valid segments are merged into
+      // one loci (combinator.merge — modifier.union only keeps the first).
+      const exprs = flexSegments
+        .filter(
+          (s) =>
+            s.chain >= 1 &&
+            s.chain <= order.length &&
+            Number.isFinite(s.start) &&
+            Number.isFinite(s.stop) &&
+            s.stop >= s.start
+        )
+        .map((s) => segmentExpression(order[s.chain - 1]!, s.start, s.stop))
+      if (exprs.length === 0) return
+
+      await setStructureOverpaint(
+        plugin,
+        components,
+        FLEX_COLOR,
+        overpaintLoci(MS.struct.combinator.merge(exprs)),
+        ['cartoon']
+      )
+    }
+
+    void paint()
+    return () => {
+      cancelled = true
+    }
+  }, [flexSegments, structureLoaded])
+
+  // Show/hide chains by making hidden chains fully transparent (works on the
+  // preset's cartoon component — no per-chain rebuild needed).
+  useEffect(() => {
+    const plugin = pluginRef.current
+    if (!plugin || !structureLoaded) return
+    let cancelled = false
+
+    const apply = async () => {
+      const structureRef =
+        plugin.managers.structure.hierarchy.current.structures[0]
+      if (!structureRef) return
+      const components = structureRef.components
+      if (components.length === 0) return
+
+      await clearStructureTransparency(plugin, components, ['cartoon'])
+      if (cancelled) return
+
+      const order = chainOrderRef.current
+      const hidden = hiddenChains.filter((c) => order.includes(c))
+      if (hidden.length === 0) return
+
+      const expr = chainsExpression(hidden)
+      await setStructureTransparency(
+        plugin,
+        components,
+        1,
+        async (structure: Structure) => {
+          const sel = Script.getStructureSelection(expr, structure)
+          return StructureSelection.toLociWithSourceUnits(sel)
+        },
+        ['cartoon']
+      )
+    }
+
+    void apply()
+    return () => {
+      cancelled = true
+    }
+  }, [hiddenChains, structureLoaded])
+
+  return (
+    <Box>
+      <Box
+        sx={{
+          position: 'relative',
+          width: '100%',
+          height: `${height}px`,
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 1,
+          overflow: 'hidden'
+        }}
+      >
+        <div
+          ref={parentRef}
+          style={{ position: 'absolute', inset: 0 }}
+        />
+        {!structureFile && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'text.secondary',
+              pointerEvents: 'none'
+            }}
+          >
+            <Typography variant="body2">
+              Upload a structure in Block 1 to explore it here.
+            </Typography>
+          </Box>
+        )}
+      </Box>
+      {error && (
+        <Typography
+          variant="caption"
+          color="error"
+          sx={{ mt: 0.5, display: 'block' }}
+        >
+          {error}
+        </Typography>
+      )}
+      {autoAssigned > 0 && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ mt: 0.5, display: 'block' }}
+        >
+          No chain IDs were found in this file — {autoAssigned} chains were
+          auto-assigned (A, B, …) from chain breaks (TER records), matching how
+          Carbonara identifies chains.
+        </Typography>
+      )}
+    </Box>
+  )
+}
+
+export default CarbonaraStructureViewer

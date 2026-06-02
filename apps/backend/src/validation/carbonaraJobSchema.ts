@@ -9,7 +9,6 @@ import {
   saxsCheck,
   jsonFileCheck,
   pdbOrCifExtTest,
-  pdbOrCifChainIdCheck,
   pdbOrCifResidueCheck
 } from './helpers/fileValidators.js'
 
@@ -31,8 +30,9 @@ export const carbonaraJobSchema = yup.object({
     .concat(noSpacesTest())
     .concat(noShellMetacharsTest())
     .concat(fileNameLengthTest()),
+  // No chain-ID check (unlike other job types): Carbonara splits chains by TER
+  // records, so a missing chain-ID column is valid input.
   pdb_file: requiredFile('A PDB or CIF file is required')
-    .concat(pdbOrCifChainIdCheck())
     .concat(pdbOrCifResidueCheck())
     .concat(pdbOrCifExtTest())
     .concat(fileSizeTest(10_000_000))

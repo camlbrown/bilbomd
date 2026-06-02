@@ -50,6 +50,27 @@ interface CarbonaraPreviewResult {
   message?: string
 }
 
+interface CarbonaraAutoFlexResponse {
+  previewId: string
+}
+
+// B2.4: result of the Carbonara auto-flexibility prepare-step.
+// flex_ranges/chain are 1-based (chain 1 = first chain); residues are PDB
+// (auth) numbers, matching the manual-range convention and the 3D viewer.
+export interface CarbonaraAutoFlexResult {
+  status: 'pending' | 'done' | 'error'
+  flex_ranges?: { chain: number; ranges: number[][] }[]
+  sections?: number[]
+  all_linkers?: {
+    segment: number
+    chain: number
+    start: number
+    stop: number
+    selected: boolean
+  }[]
+  message?: string
+}
+
 interface Af2PaeStatusResponse {
   status: string
   progress?: number
@@ -273,6 +294,20 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
         url: `/jobs/carbonara-initfoxs/${previewId}`,
         method: 'GET'
       })
+    }),
+    // B2.4: Carbonara auto-flexibility prepare-step (preview mini-pipeline)
+    addCarbonaraAutoFlex: builder.mutation<CarbonaraAutoFlexResponse, FormData>({
+      query: (formData) => ({
+        url: '/jobs/carbonara-autoflex',
+        method: 'POST',
+        body: formData
+      })
+    }),
+    getCarbonaraAutoFlex: builder.query<CarbonaraAutoFlexResult, string>({
+      query: (previewId) => ({
+        url: `/jobs/carbonara-autoflex/${previewId}`,
+        method: 'GET'
+      })
     })
   })
 })
@@ -300,7 +335,9 @@ export const {
   useLazyGetFileByIdAndNameQuery,
   useGetMDMoviesQuery,
   useAddCarbonaraInitFoxsMutation,
-  useLazyGetCarbonaraInitFoxsQuery
+  useLazyGetCarbonaraInitFoxsQuery,
+  useAddCarbonaraAutoFlexMutation,
+  useLazyGetCarbonaraAutoFlexQuery
 } = jobsApiSlice
 
 // Select the query result object from the cache

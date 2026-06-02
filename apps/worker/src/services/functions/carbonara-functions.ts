@@ -507,6 +507,82 @@ export const buildInitFoxsContainerArgs = (
   return args
 }
 
+// ---------------------------------------------------------------------------
+// B2.4 — auto-flexibility prepare (carbonara-autoflex queue) helpers
+// ---------------------------------------------------------------------------
+
+export interface BuildAutoFlexContainerArgsOptions {
+  image: string
+  /** Absolute host directory mounted at /job inside the container. */
+  hostDir: string
+  /** Basename of the structure (PDB or CIF) file inside hostDir. */
+  pdbFileName: string
+  /** Basename of the SAXS .dat file inside hostDir (setup requires it). */
+  datFileName: string
+  /** Python binary to invoke inside the container. */
+  pythonBin: string
+  /** In-container path to carbonara_autoflex.py. */
+  autoFlexPath: string
+  /** In-container Carbonara checkout root (for setup_carbonara.py + cdt). */
+  carbonaraRoot: string
+  /** Optional minimum q forwarded to setup. */
+  minQ?: number | null
+  /** Optional maximum q forwarded to setup. */
+  maxQ?: number | null
+  /** Optional PAE JSON basename inside hostDir. When set, selection uses
+   *  Carbonara's PAE path (--alphaFoldFlex) instead of the sheet-breaking auto. */
+  paeFileName?: string | null
+  /** Absolute Å PAE threshold (only used when paeFileName is set). */
+  paeFlexThreshold?: number | null
+  /** Optional host path to bind-mount over autoFlexPath for local dev.
+   *  When non-empty, inserts -v <autoFlexMount>:<autoFlexPath>:ro,Z. */
+  autoFlexMount?: string
+}
+
+/**
+ * Build the container argument vector for a carbonara-autoflex job.
+ * Invocation inside the container:
+ *   python <autoFlexPath> --pdb /job/<pdb> --saxs /job/<dat> --outdir /job
+ *          --carbonara-root <root> [--min_q <q>] [--max_q <q>]
+ *
+ * When autoFlexMount is non-empty an extra bind-mount overlays the baked helper
+ * (CARBONARA_AUTOFLEX_MOUNT dev workflow, analogous to CARBONARA_INITFOXS_MOUNT).
+ */
+export const buildAutoFlexContainerArgs = (
+  opts: BuildAutoFlexContainerArgsOptions
+): string[] => {
+  const args = ['run', '--rm', '-v', `${opts.hostDir}:/job:Z`]
+
+  if (opts.autoFlexMount) {
+    args.push('-v', `${opts.autoFlexMount}:${opts.autoFlexPath}:ro,Z`)
+  }
+
+  args.push(
+    opts.image,
+    opts.pythonBin,
+    opts.autoFlexPath,
+    '--pdb', `/job/${opts.pdbFileName}`,
+    '--saxs', `/job/${opts.datFileName}`,
+    '--outdir', '/job',
+    '--carbonara-root', opts.carbonaraRoot
+  )
+
+  if (opts.minQ != null) {
+    args.push('--min_q', String(opts.minQ))
+  }
+  if (opts.maxQ != null) {
+    args.push('--max_q', String(opts.maxQ))
+  }
+  if (opts.paeFileName) {
+    args.push('--pae', `/job/${opts.paeFileName}`)
+    if (opts.paeFlexThreshold != null) {
+      args.push('--pae_flex_threshold', String(opts.paeFlexThreshold))
+    }
+  }
+
+  return args
+}
+
 export interface RunCarbonaraContainerOptions {
   containerBin: string
   args: string[]

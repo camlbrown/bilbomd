@@ -14,6 +14,7 @@ import { createBilboMdWorker } from './workers/bilboMdWorker.js'
 import { createMovieWorker } from './workers/movieWorker.js'
 import { createMultiMDWorker } from './workers/multiMdWorker.js'
 import { createCarbonaraPreviewWorker } from './workers/carbonaraPreviewWorker.js'
+import { createCarbonaraAutoFlexWorker } from './workers/carbonaraAutoFlexWorker.js'
 import { checkNERSC } from './workers/workerControl.js'
 import { monitorAndCleanupJobs } from './workers/bilboMdNerscJobMonitor.js'
 import { redis } from './queues/redisConn.js'
@@ -37,6 +38,7 @@ let bilboMdWorker: Worker | null = null
 let movieWorker: Worker | null = null
 let multimdWorker: Worker | null = null
 let carbonaraPreviewWorker: Worker | null = null
+let carbonaraAutoFlexWorker: Worker | null = null
 
 const workerOptions: WorkerOptions = {
   connection: redis,
@@ -62,12 +64,23 @@ const carbonaraPreviewWorkerOptions: WorkerOptions = {
   concurrency: config.carbonara.previewConcurrency
 }
 
+const carbonaraAutoFlexWorkerOptions: WorkerOptions = {
+  connection: redis,
+  concurrency: config.carbonara.autoFlexConcurrency
+}
+
 const startWorkers = async () => {
   const systemName = config.runOnNERSC ? 'NERSC' : 'Hyperion/Epyc'
   logger.info(`Attempting to start workers on ${systemName}...`)
 
   // Create workers only if they are not already initialized
-  if (!bilboMdWorker || !movieWorker || !multimdWorker || !carbonaraPreviewWorker) {
+  if (
+    !bilboMdWorker ||
+    !movieWorker ||
+    !multimdWorker ||
+    !carbonaraPreviewWorker ||
+    !carbonaraAutoFlexWorker
+  ) {
     // If running on NERSC, check credentials before starting workers
     if (config.runOnNERSC) {
       logger.info('Checking NERSC credentials...')
@@ -93,6 +106,11 @@ const startWorkers = async () => {
       carbonaraPreviewWorkerOptions
     )
     logger.info(`Carbonara Preview Worker started on ${systemName}`)
+
+    carbonaraAutoFlexWorker = createCarbonaraAutoFlexWorker(
+      carbonaraAutoFlexWorkerOptions
+    )
+    logger.info(`Carbonara AutoFlex Worker started on ${systemName}`)
   } else {
     logger.info('Workers are already initialized')
   }
@@ -103,7 +121,11 @@ const workers = [
   { getWorker: () => bilboMdWorker, name: 'BilboMD Worker' },
   { getWorker: () => movieWorker, name: 'Movie Worker' },
   { getWorker: () => multimdWorker, name: 'MultiMD Worker' },
-  { getWorker: () => carbonaraPreviewWorker, name: 'Carbonara Preview Worker' }
+  { getWorker: () => carbonaraPreviewWorker, name: 'Carbonara Preview Worker' },
+  {
+    getWorker: () => carbonaraAutoFlexWorker,
+    name: 'Carbonara AutoFlex Worker'
+  }
 ]
 
 // Store interval IDs for cleanup

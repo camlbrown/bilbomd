@@ -147,6 +147,16 @@ export const config = {
     // Optional host path to bind-mount the helper for local dev (like runnerMount).
     initFoxsMount: getEnvVarWithDefault('CARBONARA_INITFOXS_MOUNT', ''),
     // Concurrency for the dedicated carbonara-preview BullMQ worker.
-    previewConcurrency: parsePositiveIntEnv('CARBONARA_PREVIEW_CONCURRENCY', 2)
+    previewConcurrency: parsePositiveIntEnv('CARBONARA_PREVIEW_CONCURRENCY', 2),
+    // B2.4: auto-flexibility prepare helper settings.
+    // In-container path to carbonara_autoflex.py (baked into the image).
+    autoFlexPath: getEnvVarWithDefault(
+      'CARBONARA_AUTOFLEX_PATH',
+      '/opt/carbonara/carbonara_autoflex.py'
+    ),
+    // Optional host path to bind-mount the helper for local dev (like initFoxsMount).
+    autoFlexMount: getEnvVarWithDefault('CARBONARA_AUTOFLEX_MOUNT', ''),
+    // Concurrency for the dedicated carbonara-autoflex BullMQ worker.
+    autoFlexConcurrency: parsePositiveIntEnv('CARBONARA_AUTOFLEX_CONCURRENCY', 2)
   }
 }

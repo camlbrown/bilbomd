@@ -13,6 +13,10 @@ import {
   createCarbonaraInitFoxs,
   getCarbonaraInitFoxs
 } from '../controllers/jobs/carbonaraInitFoxsController.js'
+import {
+  createCarbonaraAutoFlex,
+  getCarbonaraAutoFlex
+} from '../controllers/jobs/carbonaraAutoFlexController.js'
 import { createNewMultiJob } from '../controllers/jobs/multiMdController.js'
 import { downloadPDB, getFoxsData } from '../controllers/foxsController.js'
 import { getFile } from '../controllers/fileDownloadController.js'
@@ -48,6 +52,11 @@ router.route('/').get(getAllJobs).post(createNewJob)
 // otherwise GET /carbonara-initfoxs/:id is shadowed by '/:id/:filename'.
 router.route('/carbonara-initfoxs').post(createCarbonaraInitFoxs)
 router.route('/carbonara-initfoxs/:id').get(getCarbonaraInitFoxs)
+
+// B2.4: Carbonara auto-flexibility prepare-step (preview queue — no Mongo model).
+// MUST be registered before the generic '/:id' and '/:id/:filename' routes.
+router.route('/carbonara-autoflex').post(createCarbonaraAutoFlex)
+router.route('/carbonara-autoflex/:id').get(getCarbonaraAutoFlex)
 
 router.route('/:id').get(getJobById)
 router.route('/:id').delete(deleteJob)

@@ -2,7 +2,6 @@ import { object, string, number, boolean, mixed } from 'yup'
 import {
   requiredFile,
   pdbOrCifExtTest,
-  pdbOrCifChainIdCheck,
   pdbOrCifResidueCheck,
   fileSizeTest,
   fileNameLengthTest,
@@ -21,8 +20,10 @@ export const bilbomdCarbonaraJobSchema = object().shape({
     .min(4, 'Title must contain at least 4 characters.')
     .max(30, 'Title must contain less than 30 characters.')
     .matches(/^[\w\s-]+$/, 'No special characters allowed'),
+  // Note: no chain-ID check here (unlike other job types). Carbonara splits
+  // chains by TER records, so a missing chain-ID column is fine — the viewer
+  // auto-assigns chains from TER breaks for display.
   pdb_file: requiredFile('A PDB or CIF file is required')
-    .concat(pdbOrCifChainIdCheck())
     .concat(pdbOrCifResidueCheck())
     .concat(pdbOrCifExtTest())
     .concat(fileSizeTest(10_000_000))
