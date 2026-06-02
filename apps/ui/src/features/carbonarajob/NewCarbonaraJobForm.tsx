@@ -800,10 +800,55 @@ const NewCarbonaraJobForm = () => {
               Carbonara is a SAXS-guided protein structure refinement workflow.
               Starting from an atomic or predicted model, it converts the
               structure into a coarse-grained representation and samples
-              conformational changes against your experimental SAXS data. Provide
-              a structure (PDB or mmCIF) and a SAXS curve, then choose the
-              q-range and how many independent fits to run.
+              conformational changes against your experimental SAXS data.
             </Typography>
+            <Typography sx={{ m: 1 }}>
+              You will fill in three blocks:
+            </Typography>
+            <Box
+              component="ul"
+              sx={{ m: 1, mt: 0, pl: 3 }}
+            >
+              <li>
+                <strong>1 · Initial Scattering Check</strong> — upload your
+                structure (PDB or mmCIF) and experimental SAXS curve. A quick
+                FoXS fit shows how well the starting model already matches the
+                data (I(q) vs q plus residuals), so you know what you&apos;re
+                starting from.
+              </li>
+              <li>
+                <strong>2 · Conformational Sampling</strong> — the heart of the
+                setup, built around an interactive <strong>3D viewer</strong>.
+                Hover a residue to see its name/number/chain, and toggle chains
+                on/off. Three sub-blocks let you tell Carbonara how the model may
+                move, and <strong>each choice is shown live in that 3D viewer</strong>:
+                <Box
+                  component="ul"
+                  sx={{ pl: 3 }}
+                >
+                  <li>
+                    <strong>Flexibility</strong> — which regions can flex.
+                    Carbonara&apos;s <em>Auto</em> selection, your own{' '}
+                    <em>Manual</em> ranges, or an optional <em>PAE</em> aid;
+                    flexible residues are highlighted yellow.
+                  </li>
+                  <li>
+                    <strong>Distance constraints</strong> — optional residue
+                    pairs to keep near each other; drawn as dashed lines.
+                  </li>
+                  <li>
+                    <strong>Oligomeric state</strong> — Monomer or Multimer; for
+                    a Multimer you can enable affine rotations and merge chains
+                    into rigid subunits (shown as shared colours).
+                  </li>
+                </Box>
+              </li>
+              <li>
+                <strong>3 · Fitting</strong> — the q-range to fit over, how many
+                independent fits to run, the sampling-step budget, and whether to
+                rebuild all-atom models (cg2all) from the coarse-grained results.
+              </li>
+            </Box>
           </AccordionDetails>
         </Accordion>
       </Grid>
@@ -1035,7 +1080,8 @@ const NewCarbonaraJobForm = () => {
                         color="text.secondary"
                         sx={{ mr: 0.5 }}
                       >
-                        Show chains (chain 1 = {viewerChains[0]}):
+                        Show / hide chains in the 3D viewer (chain 1 ={' '}
+                        {viewerChains[0]}):
                       </Typography>
                       {viewerChains.map((c, i) => {
                         const visible = !hiddenChains.includes(c)
@@ -1199,7 +1245,8 @@ const NewCarbonaraJobForm = () => {
                                   sx={{ fontWeight: 600, mb: 0.5 }}
                                 >
                                   Auto-selected flexible residues (
-                                  {autoFlexRanges.length}):
+                                  {autoFlexRanges.length}) — highlighted yellow
+                                  in the 3D viewer above:
                                 </Typography>
                                 <Stack
                                   direction="row"
@@ -1243,8 +1290,10 @@ const NewCarbonaraJobForm = () => {
                     {flexMode === 'manual' && (
                       <Box sx={{ ml: 3, mt: 0.5 }}>
                         <Typography variant="caption" color="text.secondary">
-                          Enter flexible residue ranges (chain 1 = first
-                          chain). Start and stop are inclusive residue numbers.
+                          Enter flexible residue ranges (chain 1 = first chain).
+                          Start and stop are inclusive residue numbers. Each
+                          valid range is highlighted yellow in the 3D viewer
+                          above as you type.
                         </Typography>
                         {flexRangeRows.map((row, idx) => (
                           <Box
@@ -1529,6 +1578,16 @@ const NewCarbonaraJobForm = () => {
                                     >
                                       Send to Manual editor
                                     </Button>
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      sx={{ display: 'block', mt: 0.5 }}
+                                    >
+                                      Sending these to the Manual editor switches
+                                      to Manual mode and highlights them yellow in
+                                      the 3D viewer above, where you can refine
+                                      them.
+                                    </Typography>
                                   </>
                                 )}
                               </Box>
@@ -2017,6 +2076,14 @@ const NewCarbonaraJobForm = () => {
                   <Typography>3 · Fitting</Typography>
                 </HeaderBox>
                 <Paper sx={{ p: 2, mb: 2 }}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: 'block', mb: 1 }}
+                  >
+                    Controls the conformational sampling run itself. These do not
+                    change the 3D viewer above.
+                  </Typography>
                   <Box sx={{ display: 'flex', gap: 2, my: 2 }}>
                     <Field
                       label="q min"
@@ -2051,6 +2118,15 @@ const NewCarbonaraJobForm = () => {
                       sx={{ width: '160px' }}
                     />
                   </Box>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: 'block', mb: 1 }}
+                  >
+                    q-range (Å⁻¹) of the SAXS curve to fit over. Restricting q
+                    max drops noisy high-q data; this is the same q convention as
+                    the initial scattering check.
+                  </Typography>
 
                   <Box sx={{ display: 'flex', gap: 2, my: 1 }}>
                     <Field
@@ -2090,6 +2166,16 @@ const NewCarbonaraJobForm = () => {
                       sx={{ width: '200px' }}
                     />
                   </Box>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: 'block', mb: 1 }}
+                  >
+                    <strong>Number of fits</strong>: independent sampling runs —
+                    more runs explore more conformations but take longer.{' '}
+                    <strong>Max fitting steps</strong>: the sampling-step budget
+                    per fit.
+                  </Typography>
 
                   <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
                     <Field name="all_atom">
@@ -2121,6 +2207,15 @@ const NewCarbonaraJobForm = () => {
                       )}
                     </Field>
                   </Box>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: 'block', ml: 4 }}
+                  >
+                    Rebuild full atomic detail from the coarse-grained fit results
+                    using cg2all. Optionally score each rebuilt model against your
+                    SAXS data with FoXS.
+                  </Typography>
 
                   {values.all_atom && (
                     <Box

@@ -7,7 +7,8 @@ import {
   createScoperJobHandler,
   createAlphaFoldJobHandler,
   createMultiJobHandler,
-  createOpenFoldJobHandler
+  createOpenFoldJobHandler,
+  createCarbonaraJobHandler
 } from './jobHandlers'
 
 export const createJobHandler = (jobType: string): JobHandler => {
@@ -28,6 +29,8 @@ export const createJobHandler = (jobType: string): JobHandler => {
       return createOpenFoldJobHandler()
     case 'multi':
       return createMultiJobHandler()
+    case 'carbonara':
+      return createCarbonaraJobHandler()
     default:
       throw new Error(`Unknown job type: ${jobType}`)
   }

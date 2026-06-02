@@ -7,7 +7,8 @@ import type {
   BilboMDCRDDTO,
   BilboMDScoperDTO,
   BilboMDAlphaFoldDTO,
-  BilboMDOpenFoldDTO
+  BilboMDOpenFoldDTO,
+  BilboMDCarbonaraDTO
 } from '@bilbomd/bilbomd-types'
 import type { JobHandler, MongoDBProperty } from '../types'
 import { ConstraintFileChip } from '../components/ConstraintFileChip'
@@ -206,6 +207,54 @@ export const createScoperJobHandler = (): JobHandler => ({
     const specificJob = job.mongo as BilboMDScoperDTO
 
     return [{ label: 'PDB file', value: specificJob.pdb_file }]
+  }
+})
+
+export const createCarbonaraJobHandler = (): JobHandler => ({
+  getJobTypeDisplayName: () => 'BilboMD Carbonara',
+
+  getJobSpecificProperties: (job: BilboMDJobDTO): MongoDBProperty[] => {
+    const j = job.mongo as BilboMDCarbonaraDTO
+    const flexMode = j.flex_mode
+      ? j.flex_mode.charAt(0).toUpperCase() + j.flex_mode.slice(1)
+      : 'Auto'
+
+    const props: MongoDBProperty[] = [
+      { label: 'Structure file', value: j.pdb_file },
+      { label: 'Flexibility mode', value: flexMode },
+      { label: 'q range', value: `${j.min_q}–${j.max_q} Å⁻¹` },
+      { label: 'Number of fits', value: j.fit_n_times },
+      { label: 'Max fitting steps', value: j.max_fit_steps },
+      {
+        label: 'Oligomeric state',
+        value: j.multimer ? 'Multimer' : 'Monomer'
+      }
+    ]
+
+    if (j.multimer) {
+      props.push({
+        label: 'Affine rotation',
+        value: j.rotation ? 'Enabled' : 'Disabled'
+      })
+      if (j.chain_merges && j.chain_merges.length > 0) {
+        props.push({
+          label: 'Chain merges',
+          value: j.chain_merges.map((p) => p.join('+')).join(', ')
+        })
+      }
+    }
+    if (j.pae_file) {
+      props.push({ label: 'PAE file', value: j.pae_file })
+    }
+    if (j.constraints_file) {
+      props.push({ label: 'Constraints file', value: j.constraints_file })
+    }
+    props.push({
+      label: 'Return all-atom (cg2all)',
+      value: j.all_atom ? 'Yes' : 'No'
+    })
+
+    return props
   }
 })
 
