@@ -877,6 +877,12 @@ const Jobs = () => {
                     rows={rows}
                     columns={columns}
                     rowHeight={35}
+                    getRowHeight={(params) =>
+                      params.model.jobType === 'carbonara' &&
+                      params.model.status === 'Running'
+                        ? 56
+                        : null
+                    }
                     initialState={{
                       pagination: { paginationModel: { pageSize: 20, page } },
                       columns: {
