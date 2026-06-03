@@ -488,7 +488,7 @@ const NewCarbonaraJobForm = () => {
   // Multimer -> affine rotation. mergeGroups: each inner array is a set of
   // chain ids merged into one rigid subunit (rotates together).
   const [oligomericState, setOligomericState] = useState<
-    'monomer' | 'multimer'
+    'monomer' | 'multimer' | 'mixture'
   >('monomer')
   const [affineRotation, setAffineRotation] = useState<boolean>(false)
   const [mergeGroups, setMergeGroups] = useState<string[][]>([])
@@ -811,10 +811,11 @@ const NewCarbonaraJobForm = () => {
             >
               <li>
                 <strong>1 · Initial Scattering Check</strong> — upload your
-                structure (PDB or mmCIF) and experimental SAXS curve. A quick
-                FoXS fit shows how well the starting model already matches the
-                data (I(q) vs q plus residuals), so you know what you&apos;re
-                starting from.
+                structure (PDB or mmCIF) and experimental SAXS curve, and choose
+                the <strong>oligomeric state</strong> (Monomer or Multimer;
+                Mixture coming soon). A quick FoXS fit shows how well the starting
+                model already matches the data (I(q) vs q plus residuals), so you
+                know what you&apos;re starting from.
               </li>
               <li>
                 <strong>2 · Conformational Sampling</strong> — the heart of the
@@ -837,9 +838,9 @@ const NewCarbonaraJobForm = () => {
                     pairs to keep near each other; drawn as dashed lines.
                   </li>
                   <li>
-                    <strong>Oligomeric state</strong> — Monomer or Multimer; for
-                    a Multimer you can enable affine rotations and merge chains
-                    into rigid subunits (shown as shared colours).
+                    <strong>Affine rotations</strong> — for a Multimer (chosen in
+                    Block 1) you can enable rigid-body rotations and merge chains
+                    into subunits that move together (shown as shared colours).
                   </li>
                 </Box>
               </li>
@@ -945,6 +946,58 @@ const NewCarbonaraJobForm = () => {
                         fileExt=".dat"
                       />
                     </Grid>
+
+                    {/* Oligomeric state — chosen up front. Gates the affine
+                        rotation sub-block in Block 2. Mixture is a placeholder
+                        for upcoming multi-state functionality. */}
+                    <Box sx={{ mt: 2, mb: 1 }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ fontWeight: 600, mb: 0.5 }}
+                      >
+                        Oligomeric state
+                      </Typography>
+                      <ToggleButtonGroup
+                        exclusive
+                        size="small"
+                        value={oligomericState}
+                        onChange={(_e, v) => {
+                          if (!v) return
+                          setOligomericState(v)
+                          if (v !== 'multimer') setAffineRotation(false)
+                        }}
+                      >
+                        <ToggleButton
+                          value="monomer"
+                          disabled={isSubmitting}
+                        >
+                          Monomer
+                        </ToggleButton>
+                        <ToggleButton
+                          value="multimer"
+                          disabled={isSubmitting}
+                        >
+                          Multimer
+                        </ToggleButton>
+                        <ToggleButton
+                          value="mixture"
+                          disabled
+                        >
+                          Mixture (coming soon)
+                        </ToggleButton>
+                      </ToggleButtonGroup>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: 'block', mt: 0.5 }}
+                      >
+                        {oligomericState === 'monomer'
+                          ? 'A single subunit — no inter-subunit rotation.'
+                          : oligomericState === 'multimer'
+                            ? 'Multiple subunits — enable affine (rigid-body) rotations and chain merging in Block 2.'
+                            : 'A mixture of oligomeric states — coming soon.'}
+                      </Typography>
+                    </Box>
 
                     {/* B5: effect-based preview trigger (fires on input change) */}
                     <InitialFitTrigger
@@ -1837,7 +1890,10 @@ const NewCarbonaraJobForm = () => {
                     )}
                   </Box>
 
-                  {/* ── sub-block: Oligomeric state ── */}
+                  {/* ── sub-block: Affine rotations (multimer only) ── */}
+                  {/* The oligomeric mode is chosen in Block 1; affine rotation
+                      and chain merging are only relevant for a multimer, so this
+                      sub-block is gated on that choice. */}
                   <Typography
                     variant="subtitle1"
                     sx={{
@@ -1849,44 +1905,20 @@ const NewCarbonaraJobForm = () => {
                       borderColor: 'divider'
                     }}
                   >
-                    Oligomeric state
+                    Affine rotations
                   </Typography>
-                  {/* B4: Monomer | Multimer selection (the single gate). */}
-                  <ToggleButtonGroup
-                    exclusive
-                    size="small"
-                    value={oligomericState}
-                    onChange={(_e, v) => {
-                      if (!v) return
-                      setOligomericState(v)
-                      if (v === 'monomer') setAffineRotation(false)
-                    }}
-                    sx={{ mt: 1 }}
-                  >
-                    <ToggleButton
-                      value="monomer"
-                      disabled={isSubmitting}
+                  {oligomericState !== 'multimer' ? (
+                    <Alert
+                      severity="info"
+                      variant="outlined"
+                      sx={{ py: 0.5 }}
                     >
-                      Monomer
-                    </ToggleButton>
-                    <ToggleButton
-                      value="multimer"
-                      disabled={isSubmitting}
-                    >
-                      Multimer
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: 'block', mt: 0.5 }}
-                  >
-                    {oligomericState === 'monomer'
-                      ? 'A single subunit — no inter-subunit rotation.'
-                      : 'Multiple subunits — Carbonara can sample rigid-body (affine) rotations of subunits about one another.'}
-                  </Typography>
-
-                  {oligomericState === 'multimer' && (
+                      Affine rotations apply to multimers. Choose{' '}
+                      <strong>Multimer</strong> mode in Block 1 (Initial
+                      Scattering Check) to enable rigid-body rotation of subunits
+                      and chain merging.
+                    </Alert>
+                  ) : (
                     <Box sx={{ ml: 1, mt: 1 }}>
                       <FormControlLabel
                         control={
@@ -2099,6 +2131,9 @@ const NewCarbonaraJobForm = () => {
                         errors.min_q && touched.min_q ? errors.min_q : ''
                       }
                       value={values.min_q}
+                      slotProps={{
+                        htmlInput: { step: 0.01, min: 0, max: values.max_q }
+                      }}
                       sx={{ width: '160px' }}
                     />
                     <Field
@@ -2115,6 +2150,9 @@ const NewCarbonaraJobForm = () => {
                         errors.max_q && touched.max_q ? errors.max_q : ''
                       }
                       value={values.max_q}
+                      slotProps={{
+                        htmlInput: { step: 0.01, min: values.min_q }
+                      }}
                       sx={{ width: '160px' }}
                     />
                   </Box>
@@ -2145,6 +2183,7 @@ const NewCarbonaraJobForm = () => {
                           : ''
                       }
                       value={values.fit_n_times}
+                      slotProps={{ htmlInput: { step: 1, min: 1, max: 100 } }}
                       sx={{ width: '200px' }}
                     />
                     <Field
@@ -2163,6 +2202,7 @@ const NewCarbonaraJobForm = () => {
                           : ''
                       }
                       value={values.max_fit_steps}
+                      slotProps={{ htmlInput: { step: 100, min: 100 } }}
                       sx={{ width: '200px' }}
                     />
                   </Box>
