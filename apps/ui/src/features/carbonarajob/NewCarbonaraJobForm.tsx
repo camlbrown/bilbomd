@@ -74,7 +74,6 @@ interface CarbonaraJobFormValues {
   min_q: number
   max_q: number
   max_fit_steps: number
-  rotation: boolean
   all_atom: boolean
   do_foxs: boolean
   pae_file: string
@@ -672,7 +671,6 @@ const NewCarbonaraJobForm = () => {
     min_q: 0.01,
     max_q: 0.2,
     max_fit_steps: 1000,
-    rotation: false,
     all_atom: false,
     do_foxs: true,
     pae_file: '',
@@ -694,7 +692,9 @@ const NewCarbonaraJobForm = () => {
     form.append('min_q', values.min_q.toString())
     form.append('max_q', values.max_q.toString())
     form.append('max_fit_steps', values.max_fit_steps.toString())
-    // B4: affine rotation only applies to a multimer.
+    // B4: the `rotation` flag is derived from local UI state (oligomeric state +
+    // affine toggle), not a Formik field — affine rotation only applies to a
+    // multimer.
     const isMultimer = oligomericState === 'multimer'
     const affineOn = isMultimer && affineRotation
     form.append('rotation', affineOn.toString())
