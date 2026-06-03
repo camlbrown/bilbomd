@@ -44,9 +44,16 @@ const logYDomain = (data: IqPoint[]): [number, number] => {
   return [lo, hi <= lo ? lo * 10 : hi]
 }
 
-// Tick labels for the log axis (e.g. 0.01, 0.1, 1, 10) without float noise.
-const fmtLog = (v: number): string =>
-  v >= 1 ? String(Math.round(v)) : Number(v.toPrecision(1)).toString()
+// Tick labels as the base-10 logarithm of the intensity (e.g. -2, -1, 0, 1) so
+// the axis reads as log I(q). The axis itself stays log-scaled (ticks sit at the
+// decade positions); we just label each tick by its exponent rather than the
+// raw decade value, which keeps the linear-space error bars working.
+const fmtLog10 = (v: number): string => {
+  if (!(v > 0)) return ''
+  const l = Math.log10(v)
+  const r = Math.round(l)
+  return Math.abs(l - r) < 1e-9 ? String(r) : l.toFixed(1)
+}
 
 // The I(q) plot carries a bottom legend, so it needs extra bottom room to keep
 // the legend clear of the q-axis label. The residuals plot has no legend.
@@ -83,8 +90,8 @@ const InitialFitChart = ({
           type="number"
           domain={[yLo, yHi]}
           allowDataOverflow
-          tickFormatter={fmtLog}
-          label={{ value: 'I(q)', angle: -90, position: 'insideLeft' }}
+          tickFormatter={fmtLog10}
+          label={{ value: 'log I(q)', angle: -90, position: 'insideLeft' }}
         />
         <Tooltip />
         <Legend

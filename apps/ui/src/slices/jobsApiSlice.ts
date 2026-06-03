@@ -77,6 +77,61 @@ interface Af2PaeStatusResponse {
   [key: string]: unknown
 }
 
+// -----------------------------------------------------------------------
+// Carbonara results analysis.json contract (matches infra/carbonara/carbonara_results.py output)
+// -----------------------------------------------------------------------
+export interface CarbonaraAnalysisPrediction {
+  id: string
+  run: number
+  sub: number
+  aa_pdb: string // relative path under results/, e.g. "all_atom/mol1_sub_0_end/mol1_sub_0_end_AA.pdb"
+  chi2: number
+  rg: number
+  rmsd_to_original: number
+  tm_to_original: number
+}
+
+export interface CarbonaraConvergencePoint {
+  step: number
+  chi2: number
+  penalty: number
+  elapsed_min: number
+}
+
+export interface CarbonaraConvergenceRun {
+  log: string
+  run: number
+  points: CarbonaraConvergencePoint[]
+}
+
+export interface CarbonaraHistograms {
+  rmsd: { pairwise: number[]; vs_original: number[] }
+  tm: { pairwise: number[]; vs_original: number[] }
+  rg: { predictions: number[]; original: number }
+}
+
+export interface CarbonaraBestFit {
+  chi2: number
+  c1: number
+  c2: number
+  foxs: { q: number; exp: number; model: number; error: number }[]
+}
+
+export interface CarbonaraAnalysis {
+  status: 'done' | 'pending' | 'error'
+  chi2_threshold: number
+  n_predictions: number
+  predictions: CarbonaraAnalysisPrediction[]
+  convergence: CarbonaraConvergenceRun[]
+  histograms: CarbonaraHistograms
+  best: {
+    id: string
+    chi2: number
+    fit: CarbonaraBestFit
+  }
+  warnings: string[]
+}
+
 const jobsAdapter = createEntityAdapter<BilboMDJobDTO>()
 
 const initialState = jobsAdapter.getInitialState()
@@ -308,6 +363,25 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
         url: `/jobs/carbonara-autoflex/${previewId}`,
         method: 'GET'
       })
+    }),
+    // Carbonara results: fetch analysis.json for a completed job
+    getCarbonaraAnalysis: builder.query<CarbonaraAnalysis, string>({
+      query: (jobId) => ({
+        url: `/jobs/${jobId}/carbonara-analysis`,
+        method: 'GET'
+      }),
+      providesTags: (_, __, id) => [{ type: 'Job', id }]
+    }),
+    // Carbonara results: fetch a single AA PDB text for the 3D viewer
+    getCarbonaraAaPdb: builder.query<
+      string,
+      { jobId: string; pdbPath: string }
+    >({
+      query: ({ jobId, pdbPath }) => ({
+        url: `/jobs/${jobId}/carbonara-aa-pdb?pdbPath=${encodeURIComponent(pdbPath)}`,
+        method: 'GET',
+        responseHandler: (response) => response.text()
+      })
     })
   })
 })
@@ -337,7 +411,9 @@ export const {
   useAddCarbonaraInitFoxsMutation,
   useLazyGetCarbonaraInitFoxsQuery,
   useAddCarbonaraAutoFlexMutation,
-  useLazyGetCarbonaraAutoFlexQuery
+  useLazyGetCarbonaraAutoFlexQuery,
+  useGetCarbonaraAnalysisQuery,
+  useLazyGetCarbonaraAaPdbQuery
 } = jobsApiSlice
 
 // Select the query result object from the cache

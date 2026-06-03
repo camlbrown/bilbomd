@@ -20,6 +20,10 @@ import {
 import { createNewMultiJob } from '../controllers/jobs/multiMdController.js'
 import { downloadPDB, getFoxsData } from '../controllers/foxsController.js'
 import { getFile } from '../controllers/fileDownloadController.js'
+import {
+  getCarbonaraAnalysis,
+  getCarbonaraAaPdb
+} from '../controllers/jobs/carbonaraAnalysisController.js'
 import getMovies from '../controllers/movies/getMovies.js'
 import streamVideo from '../controllers/movies/streamVideo.js'
 import { checkFiles } from '../controllers/resubmitController.js'
@@ -63,6 +67,9 @@ router.route('/:id').delete(deleteJob)
 router.route('/:id/results').get(downloadJobResults)
 router.route('/:id/results/foxs').get(getFoxsData)
 router.route('/:id/results/:pdb').get(downloadPDB)
+// Carbonara results: MUST be before '/:id/:filename' to avoid shadowing.
+router.route('/:id/carbonara-analysis').get(getCarbonaraAnalysis)
+router.route('/:id/carbonara-aa-pdb').get(getCarbonaraAaPdb)
 router.route('/:id/logs').get(getLogForStep)
 router.route('/:id/check-files').get(checkFiles)
 router.route('/:id/movies').get(getMovies)

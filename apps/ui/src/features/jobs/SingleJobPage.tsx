@@ -35,6 +35,9 @@ import MultiMDJobDBDetails from 'features/multimd/MultiMDJobDBDetails'
 const MolstarViewer = lazy(() => import('features/molstar/Viewer'))
 import ScoperFoXSAnalysis from 'features/scoperjob/ScoperFoXSAnalysis'
 const FoXSAnalysis = lazy(() => import('./FoXSAnalysis'))
+const CarbonaraResults = lazy(
+  () => import('features/carbonarajob/CarbonaraResults')
+)
 import { useGetConfigsQuery } from 'slices/configsApiSlice'
 import {
   useGetJobByIdQuery,
@@ -400,14 +403,31 @@ const SingleJobPage = () => {
                     }
                   }}
                 >
-                  <Tab label="FoXS Analysis" />
-                  <Tab label="MD Movies" />
-                  <Tab label="Feedback" />
+                  <Tab
+                    label={
+                      job.mongo.jobType === 'carbonara'
+                        ? 'Analysis'
+                        : 'FoXS Analysis'
+                    }
+                  />
+                  {job.mongo.jobType !== 'carbonara' && (
+                    <Tab label="MD Movies" />
+                  )}
+                  {job.mongo.jobType !== 'carbonara' && (
+                    <Tab label="Feedback" />
+                  )}
                 </Tabs>
               </Box>
 
               {tabValue === 0 && (
                 <Box sx={{ p: 0 }}>
+                  {job.mongo.jobType === 'carbonara' && id && (
+                    <Grid size={{ xs: 12 }}>
+                      <Suspense fallback={<CircularProgress />}>
+                        <CarbonaraResults jobId={id} />
+                      </Suspense>
+                    </Grid>
+                  )}
                   {job.mongo.status === 'Completed' &&
                     (job.mongo.jobType === 'pdb' ||
                       job.mongo.jobType === 'crd' ||
@@ -426,7 +446,7 @@ const SingleJobPage = () => {
                     )}
                 </Box>
               )}
-              {tabValue === 1 && (
+              {job.mongo.jobType !== 'carbonara' && tabValue === 1 && (
                 <Box sx={{ p: 0 }}>
                   {moviesLoading ? (
                     <CircularProgress />
@@ -441,7 +461,7 @@ const SingleJobPage = () => {
                   )}
                 </Box>
               )}
-              {tabValue === 2 && (
+              {job.mongo.jobType !== 'carbonara' && tabValue === 2 && (
                 <Box sx={{ p: 0 }}>
                   {job.mongo.status === 'Completed' &&
                     (job.mongo.jobType === 'pdb' ||

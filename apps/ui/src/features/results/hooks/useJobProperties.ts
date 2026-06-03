@@ -38,7 +38,8 @@ export const useJobProperties = (
       crd: 'BilboMD Classic w/CRD/PSF',
       scoper: 'BilboMD Scoper',
       multi: 'BilboMD MultiMD',
-      openfold: 'BilboMD OF3'
+      openfold: 'BilboMD OF3',
+      carbonara: 'BilboMD Carbonara'
     }
 
     const getJobTypeDisplayName = (type?: string) =>
@@ -77,13 +78,19 @@ export const useJobProperties = (
     const baseProperties: MongoDBProperty[] = [
       { label: 'MongoDB ID', value: job.mongo.id },
       { label: 'Pipeline', value: getJobTypeDisplayName(job.mongo.jobType) },
-      {
-        label: 'MD Engine',
-        value:
-          job.mongo.jobType === 'scoper'
-            ? 'KGSRNA'
-            : (job.mongo.md_engine ?? 'CHARMM')
-      },
+      // Carbonara uses coarse-grained Monte-Carlo + cg2all, not an MD engine,
+      // so omit the MD Engine row for it.
+      ...(job.mongo.jobType === 'carbonara'
+        ? []
+        : [
+            {
+              label: 'MD Engine',
+              value:
+                job.mongo.jobType === 'scoper'
+                  ? 'KGSRNA'
+                  : (job.mongo.md_engine ?? 'CHARMM')
+            }
+          ]),
       { label: 'Submitted', value: job.mongo.time_submitted },
       { label: 'Started', value: job.mongo.time_started },
       { label: 'Completed', value: job.mongo.time_completed },

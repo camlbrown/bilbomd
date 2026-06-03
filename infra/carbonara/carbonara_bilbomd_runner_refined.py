@@ -561,12 +561,70 @@ def apply_flexibility(
         os.chdir(cwd)
 
 
+def chain_first_auth_residues(pdb_path: Path) -> dict[str, int]:
+    """
+    Map each chain letter to the auth residue number of its FIRST residue, i.e.
+    the numbering a user reads off the structure in the 3D viewer.
+
+    Chains with an explicit chain-ID column use that ID. For files with a blank
+    chain column (residues numbered continuously, chains delimited by TER) chains
+    are assigned sequentially A, B, C, ... per TER block, matching the viewer's
+    assignChainsByTer. Only ATOM records are considered so trailing HETATM
+    waters/ions do not invent extra chains.
+    """
+    auto_letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    first_auth: dict[str, int] = {}
+    ter_index = 0
+    seen_in_block = False
+    with open(pdb_path) as fh:
+        for line in fh:
+            rec = line[:6].strip()
+            if rec == "ATOM":
+                ch = line[21].strip()
+                key = ch if ch else auto_letters[min(ter_index, len(auto_letters) - 1)]
+                if key not in first_auth:
+                    first_auth[key] = int(line[22:26])
+                seen_in_block = True
+            elif rec == "TER" and seen_in_block:
+                ter_index += 1
+                seen_in_block = False
+    return first_auth
+
+
+def translate_constraints_to_local(
+    *, constraints_file: Path, input_pdb: Path, out_file: Path
+) -> None:
+    """
+    Rewrite a user constraints file (`res chain res chain value`) from the auth
+    numbering shown in the 3D viewer into the per-chain LOCAL numbering the engine
+    expects, so the viewer and the engine agree.
+
+    cdt.mapFixedConstraints treats each residue number as a 1-based index WITHIN
+    its chain and adds a cumulative chain offset. A user (and the viewer) instead
+    reference residues by the structure's auth numbers. Convert with:
+        local = auth - first_auth(chain) + 1
+    For a per-chain-numbered PDB (each chain restarts at 1) this is the identity;
+    for a continuously-numbered / blank-chain PDB it removes the global offset.
+    """
+    first_auth = chain_first_auth_residues(input_pdb)
+    with open(constraints_file) as src, open(out_file, "w") as dst:
+        for raw in src:
+            parts = raw.split()
+            if len(parts) != 5:
+                continue
+            r1, c1, r2, c2, val = parts
+            l1 = int(r1) - first_auth.get(c1, 1) + 1
+            l2 = int(r2) - first_auth.get(c2, 1) + 1
+            dst.write(f"{l1} {c1} {l2} {c2} {val}\n")
+
+
 def apply_constraints(
     *,
     carbonara_root: Path,
     scenario_dir: Path,
     run_script: Path,
     constraints_file: Path,
+    input_pdb: Path,
     mixture_n: int,
 ) -> None:
     """
@@ -579,7 +637,9 @@ def apply_constraints(
     Steps:
       1. Lazy-import CarbonaraDataTools (heavy; skipped for unconstrained jobs).
       2. Load chain-length offsets from chainLengths.dat (pickle).
-      3. Call cdt.mapFixedConstraints to convert (res, chain) pairs to global
+      3. Translate the user's viewer/auth residue numbers to per-chain local
+         numbering (translate_constraints_to_local), then call
+         cdt.mapFixedConstraints to convert (res, chain) pairs to global
          segment/element indices.
       4. Load coordinates1.dat with numpy.
       5. Call cdt.translate_distance_constraints to write
@@ -604,8 +664,15 @@ def apply_constraints(
     with open(chain_lengths_path, "rb") as fh:
         chain_lengths = pickle.load(fh)
 
+    local_constraints = scenario_dir / "_constraints_local.dat"
+    translate_constraints_to_local(
+        constraints_file=constraints_file,
+        input_pdb=input_pdb,
+        out_file=local_constraints,
+    )
+
     contact_preds, fixed_dists = cdt.mapFixedConstraints(
-        str(constraints_file), chain_lengths
+        str(local_constraints), chain_lengths
     )
 
     coords_path = scenario_dir / "coordinates1.dat"
@@ -887,6 +954,7 @@ def main() -> int:
                 scenario_dir=carbonara_run_dir,
                 run_script=run_script,
                 constraints_file=cf,
+                input_pdb=input_pdb,
                 mixture_n=mixture_n,
             )
         except Exception as exc:
