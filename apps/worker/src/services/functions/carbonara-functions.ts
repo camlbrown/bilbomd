@@ -583,6 +583,72 @@ export const buildAutoFlexContainerArgs = (
   return args
 }
 
+// ---------------------------------------------------------------------------
+// R1 — results analysis (carbonara_results.py -> analysis.json) helpers
+// ---------------------------------------------------------------------------
+
+export interface BuildResultsContainerArgsOptions {
+  image: string
+  /** Host job directory mounted at /job. */
+  hostDir: string
+  /** Original structure basename in /job (for Rg of the starting model). */
+  pdbFileName: string
+  /** Experimental SAXS basename in /job (for the best-model FoXS curve). */
+  datFileName: string
+  /** Python binary inside the container. */
+  pythonBin: string
+  /** In-container path to carbonara_results.py. */
+  resultsPath: string
+  /** In-container Carbonara checkout root (for fittingAnalysis). */
+  carbonaraRoot: string
+  /** Optional maximum q forwarded to the best-model FoXS curve. */
+  maxQ?: number | null
+  /** FoXS command used for the best-model curve. */
+  foxsCmd?: string
+  /** Optional host path to bind-mount over resultsPath for local dev. */
+  resultsMount?: string
+}
+
+/**
+ * Build the container argument vector for the results-analysis step.
+ * Invocation inside the container:
+ *   python <resultsPath> --results-dir /job/results --carbonara-root <root>
+ *          --original /job/<pdb> --saxs /job/<dat> --out /job/results/analysis.json
+ *          [--foxs-cmd <cmd>] [--max_q <q>]
+ *
+ * When resultsMount is non-empty an extra bind-mount overlays the baked helper
+ * (CARBONARA_RESULTS_MOUNT dev workflow, like CARBONARA_AUTOFLEX_MOUNT).
+ */
+export const buildResultsContainerArgs = (
+  opts: BuildResultsContainerArgsOptions
+): string[] => {
+  const args = ['run', '--rm', '-v', `${opts.hostDir}:/job:Z`]
+
+  if (opts.resultsMount) {
+    args.push('-v', `${opts.resultsMount}:${opts.resultsPath}:ro,Z`)
+  }
+
+  args.push(
+    opts.image,
+    opts.pythonBin,
+    opts.resultsPath,
+    '--results-dir', '/job/results',
+    '--carbonara-root', opts.carbonaraRoot,
+    '--original', `/job/${opts.pdbFileName}`,
+    '--saxs', `/job/${opts.datFileName}`,
+    '--out', '/job/results/analysis.json'
+  )
+
+  if (opts.foxsCmd) {
+    args.push('--foxs-cmd', opts.foxsCmd)
+  }
+  if (opts.maxQ != null) {
+    args.push('--max_q', String(opts.maxQ))
+  }
+
+  return args
+}
+
 export interface RunCarbonaraContainerOptions {
   containerBin: string
   args: string[]

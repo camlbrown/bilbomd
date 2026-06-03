@@ -157,6 +157,14 @@ export const config = {
     // Optional host path to bind-mount the helper for local dev (like initFoxsMount).
     autoFlexMount: getEnvVarWithDefault('CARBONARA_AUTOFLEX_MOUNT', ''),
     // Concurrency for the dedicated carbonara-autoflex BullMQ worker.
-    autoFlexConcurrency: parsePositiveIntEnv('CARBONARA_AUTOFLEX_CONCURRENCY', 2)
+    autoFlexConcurrency: parsePositiveIntEnv('CARBONARA_AUTOFLEX_CONCURRENCY', 2),
+    // R1: results-analysis helper (carbonara_results.py -> analysis.json),
+    // run as a post-reconstruction step on each Carbonara job.
+    resultsPath: getEnvVarWithDefault(
+      'CARBONARA_RESULTS_PATH',
+      '/opt/carbonara/carbonara_results.py'
+    ),
+    // Optional host path to bind-mount the helper for local dev (like autoFlexMount).
+    resultsMount: getEnvVarWithDefault('CARBONARA_RESULTS_MOUNT', '')
   }
 }

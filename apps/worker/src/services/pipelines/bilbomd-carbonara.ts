@@ -15,7 +15,8 @@ import {
   buildBackmapLoopCommand,
   buildBackmapContainerArgs,
   parseFoxsResultsSummary,
-  selectBestAaModel
+  selectBestAaModel,
+  buildResultsContainerArgs
 } from '../functions/carbonara-functions.js'
 
 /**
@@ -353,6 +354,50 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
     } else {
       await progress.update(99)
     }
+
+    // R1: results analysis -> results/analysis.json (for the web UI). Lenient:
+    // a failure here must not fail the job (coarse + AA results are preserved).
+    await MQjob.log('start carbonara-analysis')
+    try {
+      const analysisArgs = buildResultsContainerArgs({
+        image: config.carbonara.image,
+        hostDir: workDir,
+        pdbFileName: foundJob.pdb_file,
+        datFileName: foundJob.data_file,
+        pythonBin: config.carbonara.pythonBin,
+        resultsPath: config.carbonara.resultsPath,
+        carbonaraRoot: config.carbonara.carbonaraRoot,
+        maxQ: foundJob.max_q,
+        foxsCmd: config.carbonara.foxsCmd,
+        resultsMount: config.carbonara.resultsMount || undefined
+      })
+      const analysisRes = await runCarbonaraContainer({
+        containerBin: config.carbonara.containerBin,
+        args: analysisArgs,
+        cwd: workDir,
+        timeoutMs: config.carbonara.backmapTimeoutMs,
+        onStdoutLine: (line) => logger.debug(`carbonara-analysis: ${line}`),
+        onStderrLine: (line) =>
+          logger.warn(`carbonara-analysis ${foundJob.uuid}: ${line}`)
+      })
+      const analysisJson = path.join(workDir, 'results', 'analysis.json')
+      if (await fs.pathExists(analysisJson)) {
+        await MQjob.log('carbonara-analysis: analysis.json written')
+        logger.info(`Carbonara analysis.json written for ${foundJob.uuid}`)
+      } else {
+        await MQjob.log(
+          `carbonara-analysis: analysis.json not produced (exit ${analysisRes.code})`
+        )
+      }
+    } catch (analysisErr) {
+      logger.warn(
+        `carbonara-analysis failed for ${foundJob.uuid}: ${
+          analysisErr instanceof Error ? analysisErr.message : String(analysisErr)
+        }`
+      )
+      await MQjob.log('carbonara-analysis: failed (non-fatal; results preserved)')
+    }
+    await MQjob.log('end carbonara-analysis')
 
     foundJob.results_ready = true
     await foundJob.save()
