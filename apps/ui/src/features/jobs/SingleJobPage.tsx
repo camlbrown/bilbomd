@@ -31,6 +31,7 @@ import BilboMDNerscSteps from './BilboMDNerscSteps'
 import BilboMDMongoSteps from './BilboMDMongoSteps'
 import HeaderBox from 'components/HeaderBox'
 import JobDBDetails from './JobDBDetails'
+import { carbonaraStageLabel } from 'features/carbonarajob/carbonaraStage'
 import MultiMDJobDBDetails from 'features/multimd/MultiMDJobDBDetails'
 const MolstarViewer = lazy(() => import('features/molstar/Viewer'))
 import ScoperFoXSAnalysis from 'features/scoperjob/ScoperFoXSAnalysis'
@@ -308,6 +309,20 @@ const SingleJobPage = () => {
               {getProgressValue().toFixed(0)} %
             </Typography>
           </Item>
+          {job.mongo.jobType === 'carbonara' &&
+            job.mongo.status === 'Running' && (
+              <Item sx={{ py: 0.5 }}>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  Current step:{' '}
+                  <strong>
+                    {carbonaraStageLabel(getProgressValue())}
+                  </strong>
+                </Typography>
+              </Item>
+            )}
         </Grid>
 
         {/* New BilboMD Steps that uses mongo.steps object */}

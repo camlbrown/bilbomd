@@ -278,18 +278,6 @@ const jobTypeToPipelineName: Record<string, string> = {
   carbonara: 'Carbonara'
 }
 
-// Human-readable stage for a running Carbonara job, derived from its progress
-// value (the worker sets 20 before the long container run and only jumps to 85
-// when it exits, so the bar sits at 20 throughout fitting — this explains why).
-const carbonaraStageLabel = (progress: number): string => {
-  if (progress < 20) return 'Preparing…'
-  if (progress < 85) return 'Fitting…'
-  if (progress < 86) return 'Collecting…'
-  if (progress < 98) return 'Reconstructing…'
-  if (progress < 100) return 'Analysing…'
-  return 'Complete'
-}
-
 const Jobs = () => {
   useTitle('BilboMD: Jobs List')
 
@@ -700,7 +688,7 @@ const Jobs = () => {
       {
         field: 'progress',
         headerName: 'Progress',
-        width: 160,
+        width: 130,
         renderCell: (params: GridCellParams) => {
           if (params.value === undefined || params.value === null) {
             return null
@@ -709,43 +697,27 @@ const Jobs = () => {
           const displayProgress = Number.isNaN(progressValue)
             ? 0
             : progressValue
-          const showStage =
-            params.row.jobType === 'carbonara' &&
-            params.row.status === 'Running'
           return (
             <Box
               sx={{
                 display: 'flex',
-                flexDirection: 'column',
+                alignItems: 'center',
                 justifyContent: 'center',
                 height: '100%',
                 width: '100%'
               }}
             >
-              <Box
-                sx={{ display: 'flex', alignItems: 'center', width: '100%' }}
+              <LinearProgress
+                variant="determinate"
+                value={displayProgress}
+                sx={{ width: '100%', marginRight: 1 }}
+              />
+              <Typography
+                variant="body2"
+                sx={{ minWidth: 35 }}
               >
-                <LinearProgress
-                  variant="determinate"
-                  value={displayProgress}
-                  sx={{ width: '100%', marginRight: 1 }}
-                />
-                <Typography
-                  variant="body2"
-                  sx={{ minWidth: 35 }}
-                >
-                  {`${displayProgress}%`}
-                </Typography>
-              </Box>
-              {showStage && (
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ lineHeight: 1.1, mt: 0.25 }}
-                >
-                  {carbonaraStageLabel(displayProgress)}
-                </Typography>
-              )}
+                {`${displayProgress}%`}
+              </Typography>
             </Box>
           )
         }
@@ -877,12 +849,6 @@ const Jobs = () => {
                     rows={rows}
                     columns={columns}
                     rowHeight={35}
-                    getRowHeight={(params) =>
-                      params.model.jobType === 'carbonara' &&
-                      params.model.status === 'Running'
-                        ? 56
-                        : null
-                    }
                     initialState={{
                       pagination: { paginationModel: { pageSize: 20, page } },
                       columns: {
