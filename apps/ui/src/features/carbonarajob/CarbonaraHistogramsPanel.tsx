@@ -153,8 +153,62 @@ const CarbonaraHistogramsPanel = ({
         />
       </Box>
 
-      {/* Metric selector */}
-      <Box sx={{ mb: 2 }}>
+      {/* Rg histogram — directly under the χ² slider that filters it */}
+      <Typography
+        variant="subtitle2"
+        sx={{ mb: 0.5 }}
+      >
+        Radius of gyration (Å) — filtered predictions
+      </Typography>
+      <ResponsiveContainer
+        width="100%"
+        height={200}
+      >
+        <BarChart
+          data={rgData}
+          margin={{ top: 5, right: 20, bottom: 32, left: 20 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis
+            dataKey="bin"
+            type="number"
+            tickFormatter={(v: number) => v.toFixed(1)}
+            label={{
+              value: 'Rg (Å)',
+              position: 'insideBottom',
+              offset: -16
+            }}
+          />
+          <YAxis
+            label={{ value: 'Count', angle: -90, position: 'insideLeft' }}
+          />
+          <Tooltip />
+          <Legend
+            verticalAlign="bottom"
+            height={22}
+            wrapperStyle={{ bottom: 0 }}
+          />
+          <ReferenceLine
+            x={rgOriginal}
+            stroke="#e76f51"
+            strokeDasharray="4 2"
+            label={{
+              value: `Original ${rgOriginal.toFixed(1)}`,
+              position: 'top',
+              fontSize: 11
+            }}
+          />
+          <Bar
+            dataKey="count"
+            name="Rg predictions"
+            fill="#2ec4b6"
+            opacity={0.8}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+
+      {/* Metric selector (controls the structural-metric histogram below) */}
+      <Box sx={{ mt: 3, mb: 2 }}>
         <ToggleButtonGroup
           value={metric}
           exclusive
@@ -214,60 +268,6 @@ const CarbonaraHistogramsPanel = ({
             name="vs Original"
             fill="#82ca9d"
             opacity={0.7}
-          />
-        </BarChart>
-      </ResponsiveContainer>
-
-      {/* Rg histogram */}
-      <Typography
-        variant="subtitle2"
-        sx={{ mt: 2, mb: 0.5 }}
-      >
-        Radius of gyration (Å) — filtered predictions
-      </Typography>
-      <ResponsiveContainer
-        width="100%"
-        height={200}
-      >
-        <BarChart
-          data={rgData}
-          margin={{ top: 5, right: 20, bottom: 32, left: 20 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis
-            dataKey="bin"
-            type="number"
-            tickFormatter={(v: number) => v.toFixed(1)}
-            label={{
-              value: 'Rg (Å)',
-              position: 'insideBottom',
-              offset: -16
-            }}
-          />
-          <YAxis
-            label={{ value: 'Count', angle: -90, position: 'insideLeft' }}
-          />
-          <Tooltip />
-          <Legend
-            verticalAlign="bottom"
-            height={22}
-            wrapperStyle={{ bottom: 0 }}
-          />
-          <ReferenceLine
-            x={rgOriginal}
-            stroke="#e76f51"
-            strokeDasharray="4 2"
-            label={{
-              value: `Original ${rgOriginal.toFixed(1)}`,
-              position: 'top',
-              fontSize: 11
-            }}
-          />
-          <Bar
-            dataKey="count"
-            name="Rg predictions"
-            fill="#2ec4b6"
-            opacity={0.8}
           />
         </BarChart>
       </ResponsiveContainer>
