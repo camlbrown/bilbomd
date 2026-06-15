@@ -28,6 +28,22 @@ const parsePositiveIntEnv = (name: string, defaultValue: number): number => {
   return Math.floor(parsed)
 }
 
+// Like parsePositiveIntEnv but treats 0 as a valid value meaning "no limit".
+// Used for step timeouts that may legitimately be disabled (e.g. long-running
+// Carbonara jobs that should not be wall-clock capped). The consuming helper
+// (runCarbonaraContainer) skips its kill timer when the value is 0.
+const parseTimeoutEnv = (name: string, defaultValue: number): number => {
+  const raw = process.env[name]
+  if (raw === undefined || raw === '') return defaultValue
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(
+      `Environment variable ${name}="${raw}" is not a non-negative number`
+    )
+  }
+  return Math.floor(parsed)
+}
+
 const validateRequiredEnvVars = (): void => {
   const required = [
     'BILBOMD_URL',
@@ -123,7 +139,9 @@ export const config = {
     ),
     // In-container python used to launch the wrapper.
     pythonBin: getEnvVarWithDefault('CARBONARA_PYTHON_BIN', 'python'),
-    timeoutMs: parsePositiveIntEnv('CARBONARA_TIMEOUT_MS', 6 * 60 * 60 * 1000),
+    // 0 = no wall-clock cap (default). Carbonara jobs can run arbitrarily long
+    // (many runs / high step counts); set a positive ms value to re-enable a cap.
+    timeoutMs: parseTimeoutEnv('CARBONARA_TIMEOUT_MS', 0),
     // cg2all all-atom reconstruction settings (A2).
     cg2allExec: getEnvVarWithDefault(
       'CARBONARA_CG2ALL_EXEC',
@@ -131,10 +149,9 @@ export const config = {
     ),
     foxsCmd: getEnvVarWithDefault('CARBONARA_FOXS_CMD', 'pyfoxs'),
     maxBackmap: parsePositiveIntEnv('CARBONARA_MAX_BACKMAP', 5),
-    backmapTimeoutMs: parsePositiveIntEnv(
-      'CARBONARA_BACKMAP_TIMEOUT_MS',
-      60 * 60 * 1000
-    ),
+    // 0 = no wall-clock cap (default). Covers the cg2all reconstruction and the
+    // FoXS analysis steps; set a positive ms value to re-enable a cap.
+    backmapTimeoutMs: parseTimeoutEnv('CARBONARA_BACKMAP_TIMEOUT_MS', 0),
     // Optional host path to bind-mount over the in-container wrapper for local
     // dev iteration without an image rebuild. Empty string = no mount (prod).
     runnerMount: getEnvVarWithDefault('CARBONARA_RUNNER_MOUNT', ''),
