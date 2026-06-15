@@ -32,6 +32,7 @@ import BilboMDMongoSteps from './BilboMDMongoSteps'
 import HeaderBox from 'components/HeaderBox'
 import JobDBDetails from './JobDBDetails'
 import { carbonaraStageLabel } from 'features/carbonarajob/carbonaraStage'
+import CarbonaraLiveProgress from 'features/carbonarajob/CarbonaraLiveProgress'
 import MultiMDJobDBDetails from 'features/multimd/MultiMDJobDBDetails'
 const MolstarViewer = lazy(() => import('features/molstar/Viewer'))
 import ScoperFoXSAnalysis from 'features/scoperjob/ScoperFoXSAnalysis'
@@ -335,6 +336,15 @@ const SingleJobPage = () => {
             }}
           >
             <BilboMDMongoSteps steps={job.mongo.steps} />
+            {/* Live Carbonara fitting progress, under the steps box while
+                running — fills the lower-left area with the chi² convergence. */}
+            {job.mongo.jobType === 'carbonara' &&
+              job.mongo.status === 'Running' &&
+              id && (
+                <Item sx={{ mt: 2 }}>
+                  <CarbonaraLiveProgress jobId={id} />
+                </Item>
+              )}
           </Grid>
         )}
 

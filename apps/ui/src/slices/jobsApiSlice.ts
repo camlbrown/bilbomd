@@ -117,6 +117,13 @@ export interface CarbonaraBestFit {
   foxs: { q: number; exp: number; model: number; error: number }[]
 }
 
+// Live fitting progress (parsed from fitLog*.dat while the job is running).
+// Shares the convergence shape with CarbonaraAnalysis so the chart is reusable.
+export interface CarbonaraLiveProgress {
+  status: 'running' | 'pending'
+  convergence: CarbonaraConvergenceRun[]
+}
+
 export interface CarbonaraAnalysis {
   status: 'done' | 'pending' | 'error'
   chi2_threshold: number
@@ -382,6 +389,22 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
         method: 'GET',
         responseHandler: (response) => response.text()
       })
+    }),
+    // Carbonara results: fetch the original uploaded structure text, for the
+    // 3D viewer's "overlay original" comparison
+    getCarbonaraOriginalPdb: builder.query<string, string>({
+      query: (jobId) => ({
+        url: `/jobs/${jobId}/carbonara-original-pdb`,
+        method: 'GET',
+        responseHandler: (response) => response.text()
+      })
+    }),
+    // Carbonara: live fitting convergence (chi² per step, per run) while running
+    getCarbonaraLiveProgress: builder.query<CarbonaraLiveProgress, string>({
+      query: (jobId) => ({
+        url: `/jobs/${jobId}/carbonara-live-progress`,
+        method: 'GET'
+      })
     })
   })
 })
@@ -413,7 +436,9 @@ export const {
   useAddCarbonaraAutoFlexMutation,
   useLazyGetCarbonaraAutoFlexQuery,
   useGetCarbonaraAnalysisQuery,
-  useLazyGetCarbonaraAaPdbQuery
+  useLazyGetCarbonaraAaPdbQuery,
+  useLazyGetCarbonaraOriginalPdbQuery,
+  useGetCarbonaraLiveProgressQuery
 } = jobsApiSlice
 
 // Select the query result object from the cache

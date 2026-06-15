@@ -1,83 +1,16 @@
-import { useState } from 'react'
-import {
-  Box,
-  Typography,
-  Alert,
-  CircularProgress,
-  Paper,
-  ToggleButton,
-  ToggleButtonGroup
-} from '@mui/material'
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  ReferenceLine
-} from 'recharts'
+import { Box, Typography, Alert, CircularProgress, Paper } from '@mui/material'
 import { useGetCarbonaraAnalysisQuery } from 'slices/jobsApiSlice'
 import InitialFitChart from './InitialFitChart'
+import CarbonaraConvergenceChart from './CarbonaraConvergenceChart'
 import CarbonaraPredictionsTable from './CarbonaraPredictionsTable'
 import CarbonaraHistogramsPanel from './CarbonaraHistogramsPanel'
 import CarbonaraDownloadPanel from './CarbonaraDownloadPanel'
-import type { CarbonaraConvergenceRun } from 'slices/jobsApiSlice'
-
-// Palette for up to 10 convergence runs
-const RUN_COLORS = [
-  '#8884d8',
-  '#82ca9d',
-  '#ff7300',
-  '#d0748b',
-  '#2ec4b6',
-  '#e9c46a',
-  '#264653',
-  '#e76f51',
-  '#a8dadc',
-  '#457b9d'
-]
-
-interface ConvergencePoint {
-  key: number
-  [run: string]: number
-}
-
-const buildConvergenceData = (
-  runs: CarbonaraConvergenceRun[],
-  xKey: 'step' | 'elapsed_min'
-): ConvergencePoint[] => {
-  // Merge all runs into a single array keyed by the x-axis value.
-  // Each run contributes its own chi2 series.
-  const allKeys = new Set<number>()
-  runs.forEach((r) => {
-    r.points.forEach((p) => allKeys.add(xKey === 'step' ? p.step : p.elapsed_min))
-  })
-  const sorted = Array.from(allKeys).sort((a, b) => a - b)
-
-  return sorted.map((xVal) => {
-    const row: ConvergencePoint = { key: xVal }
-    runs.forEach((r) => {
-      const pt = r.points.find(
-        (p) => (xKey === 'step' ? p.step : p.elapsed_min) === xVal
-      )
-      if (pt !== undefined) {
-        row[`run${r.run}_log${r.log}`] = pt.chi2
-      }
-    })
-    return row
-  })
-}
 
 interface CarbonaraResultsProps {
   jobId: string
 }
 
 const CarbonaraResults = ({ jobId }: CarbonaraResultsProps) => {
-  const [xAxis, setXAxis] = useState<'step' | 'elapsed_min'>('step')
-
   const {
     data: analysis,
     isLoading,
@@ -116,7 +49,17 @@ const CarbonaraResults = ({ jobId }: CarbonaraResultsProps) => {
   }
 
   // --- Summary ---
-  const bestChi2 = analysis.best?.chi2 ?? null
+  // Two distinct chi² measures are reported on this page:
+  //  * Carbonara χ² — the fitting objective on the coarse-grained model, shown
+  //    on the convergence plot (analysis.convergence ScatterFitFirst).
+  //  * FoXS χ² — recomputed with FoXS on each all-atom reconstruction; this is
+  //    the predictions-table χ² and analysis.best.chi2.
+  const bestFoxsChi2 = analysis.best?.chi2 ?? null
+  const carbonaraChi2s = analysis.convergence.flatMap((r) =>
+    r.points.map((p) => p.chi2)
+  )
+  const bestCarbonaraChi2 =
+    carbonaraChi2s.length > 0 ? Math.min(...carbonaraChi2s) : null
   const nPredictions = analysis.n_predictions ?? analysis.predictions.length
 
   // --- Best FoXS fit ---
@@ -131,19 +74,6 @@ const CarbonaraResults = ({ jobId }: CarbonaraResultsProps) => {
     q: p.q,
     res: p.error > 0 ? (p.exp - p.model) / p.error : 0
   }))
-
-  // --- Convergence ---
-  const convergenceData = buildConvergenceData(analysis.convergence, xAxis)
-  // Legend labels: each fitLog{N}.dat is one fit replica, so show "Fit N",
-  // adding the run prefix only when more than one Carbonara run is present.
-  const multipleRuns = new Set(analysis.convergence.map((r) => r.run)).size > 1
-  const runSeries = analysis.convergence.map((r) => {
-    const fitNum = /(\d+)/.exec(String(r.log))?.[1] ?? String(r.log)
-    return {
-      key: `run${r.run}_log${r.log}`,
-      name: multipleRuns ? `Run ${r.run} · Fit ${fitNum}` : `Fit ${fitNum}`
-    }
-  })
 
   return (
     <Box>
@@ -179,10 +109,12 @@ const CarbonaraResults = ({ jobId }: CarbonaraResultsProps) => {
               variant="caption"
               color="text.secondary"
             >
-              Best χ²
+              Best Carbonara χ² (fit)
             </Typography>
             <Typography variant="body1">
-              {bestChi2 !== null ? bestChi2.toFixed(4) : '—'}
+              {bestCarbonaraChi2 !== null
+                ? bestCarbonaraChi2.toFixed(4)
+                : '—'}
             </Typography>
           </Box>
           <Box>
@@ -190,7 +122,18 @@ const CarbonaraResults = ({ jobId }: CarbonaraResultsProps) => {
               variant="caption"
               color="text.secondary"
             >
-              χ² threshold
+              Best FoXS χ² (all-atom)
+            </Typography>
+            <Typography variant="body1">
+              {bestFoxsChi2 !== null ? bestFoxsChi2.toFixed(4) : '—'}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+            >
+              FoXS χ² threshold
             </Typography>
             <Typography variant="body1">{analysis.chi2_threshold}</Typography>
           </Box>
@@ -224,77 +167,16 @@ const CarbonaraResults = ({ jobId }: CarbonaraResultsProps) => {
         variant="outlined"
         sx={{ p: 2, mb: 2 }}
       >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            mb: 1
-          }}
+        <Typography variant="h6">Convergence</Typography>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: 'block', mb: 1 }}
         >
-          <Typography variant="h6">Convergence</Typography>
-          <ToggleButtonGroup
-            value={xAxis}
-            exclusive
-            onChange={(_e, val) => {
-              if (val !== null) setXAxis(val)
-            }}
-            size="small"
-          >
-            <ToggleButton value="step">Step</ToggleButton>
-            <ToggleButton value="elapsed_min">Time (min)</ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
-        <ResponsiveContainer
-          width="100%"
-          height={260}
-        >
-          <LineChart
-            data={convergenceData}
-            margin={{ top: 5, right: 20, bottom: 32, left: 20 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis
-              dataKey="key"
-              type="number"
-              label={{
-                value: xAxis === 'step' ? 'Step' : 'Elapsed (min)',
-                position: 'insideBottom',
-                offset: -16
-              }}
-            />
-            <YAxis
-              label={{
-                value: 'χ²',
-                angle: -90,
-                position: 'insideLeft'
-              }}
-            />
-            <Tooltip />
-            <Legend
-              iconType="line"
-              verticalAlign="bottom"
-              height={22}
-              wrapperStyle={{ bottom: 0 }}
-            />
-            <ReferenceLine
-              y={1}
-              stroke="#aaa"
-              strokeDasharray="4 2"
-            />
-            {runSeries.map(({ key, name }, i) => (
-              <Line
-                key={key}
-                type="monotone"
-                dataKey={key}
-                name={name}
-                stroke={RUN_COLORS[i % RUN_COLORS.length]}
-                dot={false}
-                connectNulls
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+          Carbonara fitting χ² (coarse-grained model) per fit run — not the
+          all-atom FoXS χ² shown in the summary and predictions table.
+        </Typography>
+        <CarbonaraConvergenceChart convergence={analysis.convergence} />
       </Paper>
 
       {/* Best-model FoXS fit */}
@@ -308,8 +190,8 @@ const CarbonaraResults = ({ jobId }: CarbonaraResultsProps) => {
             gutterBottom
           >
             Best-model FoXS fit (
-            {analysis.best?.id ?? ''}, χ² ={' '}
-            {bestChi2 !== null ? bestChi2.toFixed(4) : '—'})
+            {analysis.best?.id ?? ''}, FoXS χ² ={' '}
+            {bestFoxsChi2 !== null ? bestFoxsChi2.toFixed(4) : '—'})
           </Typography>
           <InitialFitChart
             data={iqData}

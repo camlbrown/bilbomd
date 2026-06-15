@@ -11,11 +11,16 @@ import {
   TableRow,
   TableSortLabel,
   CircularProgress,
-  Alert
+  Alert,
+  FormControlLabel,
+  Switch
 } from '@mui/material'
 import StarIcon from '@mui/icons-material/Star'
 import CarbonaraStructureViewer from './CarbonaraStructureViewer'
-import { useLazyGetCarbonaraAaPdbQuery } from 'slices/jobsApiSlice'
+import {
+  useLazyGetCarbonaraAaPdbQuery,
+  useLazyGetCarbonaraOriginalPdbQuery
+} from 'slices/jobsApiSlice'
 import type { CarbonaraAnalysisPrediction } from 'slices/jobsApiSlice'
 
 type SortKey = keyof Pick<
@@ -40,8 +45,38 @@ const CarbonaraPredictionsTable = ({
   const [pdbText, setPdbText] = useState<string | null>(null)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [isFetching, setIsFetching] = useState(false)
+  // Original-structure overlay (fetched once per job, then cached).
+  const [overlayEnabled, setOverlayEnabled] = useState(false)
+  const [originalPdb, setOriginalPdb] = useState<string | null>(null)
+  const [overlayFetching, setOverlayFetching] = useState(false)
+  const [overlayError, setOverlayError] = useState<string | null>(null)
 
   const [triggerFetch] = useLazyGetCarbonaraAaPdbQuery()
+  const [triggerOriginal] = useLazyGetCarbonaraOriginalPdbQuery()
+
+  const handleToggleOverlay = useCallback(
+    async (enabled: boolean) => {
+      setOverlayEnabled(enabled)
+      setOverlayError(null)
+      // Lazily fetch the original structure the first time it's switched on.
+      if (enabled && originalPdb === null) {
+        setOverlayFetching(true)
+        try {
+          const result = await triggerOriginal(jobId)
+          if (result.data) {
+            setOriginalPdb(result.data)
+          } else {
+            setOverlayError('Could not load the original structure.')
+          }
+        } catch {
+          setOverlayError('Could not load the original structure.')
+        } finally {
+          setOverlayFetching(false)
+        }
+      }
+    },
+    [jobId, originalPdb, triggerOriginal]
+  )
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -90,7 +125,7 @@ const CarbonaraPredictionsTable = ({
   })
 
   const columns: { key: SortKey; label: string }[] = [
-    { key: 'chi2', label: 'χ²' },
+    { key: 'chi2', label: 'FoXS χ²' },
     { key: 'rg', label: 'Rg (Å)' },
     { key: 'rmsd_to_original', label: 'RMSD to orig (Å)' },
     { key: 'tm_to_original', label: 'TM to orig' }
@@ -180,17 +215,53 @@ const CarbonaraPredictionsTable = ({
       {/* 3D viewer for selected prediction */}
       {selectedId && (
         <Box sx={{ mt: 2 }}>
-          <Typography
-            variant="subtitle2"
-            gutterBottom
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 1
+            }}
           >
-            3D view — {selectedId}
-          </Typography>
+            <Typography
+              variant="subtitle2"
+              gutterBottom
+            >
+              3D view — {selectedId}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {overlayFetching && <CircularProgress size={16} />}
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={overlayEnabled}
+                    disabled={overlayFetching}
+                    onChange={(e) => void handleToggleOverlay(e.target.checked)}
+                  />
+                }
+                label="Overlay original (transparent grey)"
+                slotProps={{ typography: { variant: 'body2' } }}
+              />
+            </Box>
+          </Box>
+          {overlayError && (
+            <Alert
+              severity="warning"
+              sx={{ mb: 1 }}
+            >
+              {overlayError}
+            </Alert>
+          )}
           {isFetching && <CircularProgress size={24} />}
           {fetchError && <Alert severity="error">{fetchError}</Alert>}
           {!isFetching && !fetchError && pdbText && (
             <CarbonaraStructureViewer
               structureFile={pdbText}
+              overlayStructure={
+                overlayEnabled && originalPdb ? originalPdb : undefined
+              }
               height={400}
             />
           )}

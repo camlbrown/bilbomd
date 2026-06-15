@@ -17,12 +17,16 @@ import {
 } from 'molstar/lib/mol-plugin-state/helpers/structure-transparency'
 import { Script } from 'molstar/lib/mol-script/script'
 import { MolScriptBuilder as MS } from 'molstar/lib/mol-script/language/builder'
+import { compile } from 'molstar/lib/mol-script/runtime/query/compiler'
 import {
+  QueryContext,
   Structure,
   StructureElement,
   StructureProperties,
   StructureSelection
 } from 'molstar/lib/mol-model/structure'
+import { alignAndSuperpose } from 'molstar/lib/mol-model/structure/structure/util/superposition'
+import { StateTransforms } from 'molstar/lib/mol-plugin-state/transforms'
 import { Color } from 'molstar/lib/mol-util/color'
 import { chainColor } from 'features/carbonarajob/carbonaraChainPalette'
 import 'molstar/lib/mol-plugin-ui/skin/light.scss'
@@ -50,6 +54,11 @@ export interface ViewerConstraint {
 interface CarbonaraStructureViewerProps {
   // The uploaded structure file (a Formik File value) or raw structure text.
   structureFile?: File | string
+  // Optional raw PDB text of the ORIGINAL input structure. When provided it is
+  // loaded as a second structure, superposed onto structureFile, and rendered
+  // as a semi-transparent grey "ghost" so the user can see how much the
+  // structure changed during refinement.
+  overlayStructure?: string
   // Segments to colour yellow as "flexible".
   flexSegments?: FlexSegment[]
   // Chain identifiers (auth_asym_id) to hide in the viewer.
@@ -72,6 +81,11 @@ interface CarbonaraStructureViewerProps {
 // Carbonara flexible-region colour (yellow), kept distinct from the blue/orange
 // domain colours used by the results-page MDConstraints viewer.
 const FLEX_COLOR = Color(0xfadb14)
+
+// Original-structure overlay: a muted grey ghost rendered behind the
+// colour-coded prediction. transparency is 0 (opaque) .. 1 (invisible).
+const OVERLAY_COLOR = Color(0x9e9e9e)
+const OVERLAY_TRANSPARENCY = 0.6
 
 // Build a Mol* selection expression for one inclusive residue range on one chain.
 const segmentExpression = (chainId: string, start: number, stop: number) =>
@@ -145,8 +159,93 @@ const detectChains = (structure: Structure): string[] => {
   return ordered
 }
 
+// Cα selection used to superpose the overlay onto the prediction.
+const caExpression = MS.struct.generator.atomGroups({
+  'atom-test': MS.core.rel.eq([MS.ammp('label_atom_id'), 'CA'])
+})
+
+// Whole-structure loci getter, for painting/relucenting the overlay uniformly.
+const allAtomsLoci = async (structure: Structure) => {
+  const sel = Script.getStructureSelection(MS.struct.generator.all(), structure)
+  return StructureSelection.toLociWithSourceUnits(sel)
+}
+
+// Load the original input structure as a second structure, superpose it onto
+// the already-loaded prediction (structures[0]) by a Cα sequence alignment, and
+// render it as a uniform-grey, semi-transparent "ghost". Failures are
+// swallowed (logged) so a bad overlay never breaks the prediction view.
+const loadOverlay = async (plugin: PluginUIContext, text: string) => {
+  if (!text.trim()) return
+  // Match the prediction viewer's TER-based chain handling for consistency.
+  const r = assignChainsByTer(text)
+  const data = await plugin.builders.data.rawData({
+    data: r.text,
+    label: 'original (input)'
+  })
+  const trajectory = await plugin.builders.structure.parseTrajectory(
+    data,
+    'pdb'
+  )
+  await plugin.builders.structure.hierarchy.applyPreset(trajectory, 'default')
+
+  const structures = plugin.managers.structure.hierarchy.current.structures
+  if (structures.length < 2) return
+  const mainRef = structures[0]
+  const overlayRef = structures[structures.length - 1]
+  const mainData = mainRef?.cell.obj?.data
+  const overlayData = overlayRef?.cell.obj?.data
+  if (!mainRef || !overlayRef || !mainData || !overlayData) return
+
+  // Superpose: compute the rigid transform that best fits the overlay's Cα
+  // atoms onto the prediction's, then bake it into the overlay structure.
+  try {
+    const query = compile<StructureSelection>(caExpression)
+    const mainLoci = StructureSelection.toLociWithCurrentUnits(
+      query(new QueryContext(mainData))
+    )
+    const overlayLoci = StructureSelection.toLociWithCurrentUnits(
+      query(new QueryContext(overlayData))
+    )
+    const [result] = alignAndSuperpose([mainLoci, overlayLoci])
+    if (result?.bTransform) {
+      const b = plugin.state.data
+        .build()
+        .to(overlayRef.cell)
+        .insert(StateTransforms.Model.TransformStructureConformation, {
+          transform: {
+            name: 'matrix',
+            params: { data: result.bTransform, transpose: false }
+          }
+        })
+      await plugin.runTask(plugin.state.data.updateTree(b))
+    }
+  } catch (err) {
+    console.warn('Carbonara overlay superposition failed:', err)
+  }
+
+  // Paint the overlay uniform grey and make it semi-transparent so the
+  // colour-coded prediction reads as the "main" structure on top of it.
+  const components = overlayRef.components
+  if (components.length > 0) {
+    await setStructureOverpaint(plugin, components, OVERLAY_COLOR, allAtomsLoci, [
+      'cartoon'
+    ])
+    await setStructureTransparency(
+      plugin,
+      components,
+      OVERLAY_TRANSPARENCY,
+      allAtomsLoci,
+      ['cartoon']
+    )
+  }
+
+  // Re-fit the camera so both structures are framed once the overlay has moved.
+  plugin.managers.camera.reset()
+}
+
 const CarbonaraStructureViewer = ({
   structureFile,
+  overlayStructure,
   flexSegments = [],
   hiddenChains = [],
   constraints = [],
@@ -269,6 +368,16 @@ const CarbonaraStructureViewer = ({
             ?.data
         chainOrderRef.current = structure ? detectChains(structure) : []
         onChainsDetected?.(chainOrderRef.current)
+
+        // Load the original-input overlay BEFORE flagging the structure as
+        // loaded, so the chain-colour / flex / constraint effects (which key off
+        // structureLoaded and only touch structures[0]) run after the second
+        // structure is fully in place — avoiding concurrent state edits.
+        if (overlayStructure) {
+          await loadOverlay(plugin, overlayStructure)
+          if (cancelled) return
+        }
+
         setStructureLoaded(true)
       } catch (err) {
         console.error('Carbonara viewer failed to load structure:', err)
@@ -282,7 +391,7 @@ const CarbonaraStructureViewer = ({
     }
     // onChainsDetected intentionally omitted: callers pass a stable callback.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [structureFile, pluginReady])
+  }, [structureFile, overlayStructure, pluginReady])
 
   // Colour each chain with its palette colour, then paint the flexible segments
   // yellow on top. Re-runs whenever the flexible selection changes. Done in one

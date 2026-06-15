@@ -22,7 +22,9 @@ import { downloadPDB, getFoxsData } from '../controllers/foxsController.js'
 import { getFile } from '../controllers/fileDownloadController.js'
 import {
   getCarbonaraAnalysis,
-  getCarbonaraAaPdb
+  getCarbonaraAaPdb,
+  getCarbonaraOriginalPdb,
+  getCarbonaraLiveProgress
 } from '../controllers/jobs/carbonaraAnalysisController.js'
 import getMovies from '../controllers/movies/getMovies.js'
 import streamVideo from '../controllers/movies/streamVideo.js'
@@ -70,6 +72,8 @@ router.route('/:id/results/:pdb').get(downloadPDB)
 // Carbonara results: MUST be before '/:id/:filename' to avoid shadowing.
 router.route('/:id/carbonara-analysis').get(getCarbonaraAnalysis)
 router.route('/:id/carbonara-aa-pdb').get(getCarbonaraAaPdb)
+router.route('/:id/carbonara-original-pdb').get(getCarbonaraOriginalPdb)
+router.route('/:id/carbonara-live-progress').get(getCarbonaraLiveProgress)
 router.route('/:id/logs').get(getLogForStep)
 router.route('/:id/check-files').get(checkFiles)
 router.route('/:id/movies').get(getMovies)
