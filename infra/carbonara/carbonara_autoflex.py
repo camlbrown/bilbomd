@@ -145,6 +145,29 @@ def main() -> None:
         workroot.mkdir(parents=True, exist_ok=True)
         _link_runtime_layout(carbonara_root, workroot)
 
+        # Clamp max_q to just inside the experimental SAXS range: setup runs the
+        # C++ generator, which segfaults if max_q exceeds the data's largest q
+        # (mirrors the wrapper's clamp). Clamp to the second-largest q point.
+        effective_max_q = args.max_q
+        try:
+            qs = []
+            with open(args.saxs, errors='replace') as fh:
+                for line in fh:
+                    parts = line.split()
+                    if len(parts) < 2:
+                        continue
+                    try:
+                        q = float(parts[0])
+                        float(parts[1])
+                    except ValueError:
+                        continue
+                    qs.append(q)
+            qs = sorted(set(qs))
+            if len(qs) >= 2 and effective_max_q > qs[-2]:
+                effective_max_q = qs[-2]
+        except Exception:  # noqa: BLE001
+            pass
+
         cmd = [
             sys.executable, str(setup_script),
             '--pdb', str(pdb_path),
@@ -152,7 +175,7 @@ def main() -> None:
             '--name', args.name,
             '--dir', str(workroot),
             '--min_q', str(args.min_q),
-            '--max_q', str(args.max_q)
+            '--max_q', str(effective_max_q)
         ]
         if args.pae:
             pae_path = Path(args.pae)

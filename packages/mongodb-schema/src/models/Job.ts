@@ -349,12 +349,15 @@ const bilboMdScoperJobSchema = new Schema<IBilboMDScoperJob>({
 
 const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
   pdb_file: { type: String, required: true },
+  fasta_file: { type: String, required: false },
+  mixture_pdb_files: { type: [String], required: false },
   fit_n_times: { type: Number, required: true, default: 4 },
   min_q: { type: Number, required: true, default: 0.01 },
   max_q: { type: Number, required: true, default: 0.2 },
   max_q_start: { type: Number, required: true, default: 0.2 },
   max_fit_steps: { type: Number, required: true, default: 1000 },
   mixture_n: { type: Number, required: true, default: 1 },
+  max_mixture_combos: { type: Number, required: false },
   rotation: { type: Boolean, required: false, default: false },
   all_atom: { type: Boolean, default: false },
   do_foxs: { type: Boolean, default: true },

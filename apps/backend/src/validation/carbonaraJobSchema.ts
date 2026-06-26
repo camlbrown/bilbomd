@@ -6,10 +6,9 @@ import {
   fileNameLengthTest,
   noSpacesTest,
   noShellMetacharsTest,
-  saxsCheck,
+  saxsCheckCarbonara,
   jsonFileCheck,
-  pdbOrCifExtTest,
-  pdbOrCifResidueCheck
+  pdbOrCifExtTest
 } from './helpers/fileValidators.js'
 
 // Phase-1 + Phase-B Carbonara job validation: structure + SAXS files plus
@@ -26,19 +25,50 @@ export const carbonaraJobSchema = yup.object({
   dat_file: requiredFile('Experimental SAXS data is required')
     .concat(fileSizeTest(2_000_000))
     .concat(fileExtTest('dat'))
-    .concat(saxsCheck())
+    .concat(saxsCheckCarbonara())
     .concat(noSpacesTest())
     .concat(noShellMetacharsTest())
     .concat(fileNameLengthTest()),
   // No chain-ID check (unlike other job types): Carbonara splits chains by TER
   // records, so a missing chain-ID column is valid input.
+  // No generic residue allow-list check either: it flags any HETATM (e.g. Ca²⁺
+  // ions or waters in a calmodulin PDB) as "unsupported" and would reject valid
+  // input. The Carbonara worker sanitizes HETATM during setup, so we accept the
+  // file here and let setup handle it. (Mirrors the UI carbonara schema.)
   pdb_file: requiredFile('A PDB or CIF file is required')
-    .concat(pdbOrCifResidueCheck())
     .concat(pdbOrCifExtTest())
     .concat(fileSizeTest(10_000_000))
     .concat(noSpacesTest())
     .concat(noShellMetacharsTest())
     .concat(fileNameLengthTest()),
+  // Optional full experimental sequence (.fasta/.fa/.txt). Advisory only —
+  // used to flag residues missing from the structure; never blocks submission.
+  fasta_file: yup
+    .mixed()
+    .test('fasta-file-optional', 'Invalid FASTA file', function (value) {
+      if (value === undefined || value === null) return true
+      const file = value as { size?: number; originalname?: string }
+      if (!file.originalname) return true
+      if (file.size !== undefined && file.size > 1_000_000) {
+        return this.createError({ message: 'FASTA file must be < 1 MB' })
+      }
+      const name = file.originalname.toLowerCase()
+      if (/\s/.test(name)) {
+        return this.createError({
+          message: 'FASTA file name must not contain spaces'
+        })
+      }
+      if (name.length > 100) {
+        return this.createError({ message: 'FASTA file name too long' })
+      }
+      if (!/\.(fasta|fa|txt)$/.test(name)) {
+        return this.createError({
+          message: 'FASTA file must have a .fasta, .fa or .txt extension'
+        })
+      }
+      return true
+    })
+    .optional(),
   fit_n_times: yup
     .number()
     .typeError('fit_n_times must be a number')
@@ -64,6 +94,12 @@ export const carbonaraJobSchema = yup.object({
     .typeError('mixture_n must be a number')
     .integer('mixture_n must be an integer')
     .min(1, 'mixture_n must be at least 1')
+    .optional(),
+  max_mixture_combos: yup
+    .number()
+    .typeError('max_mixture_combos must be a number')
+    .integer('max_mixture_combos must be an integer')
+    .min(1, 'max_mixture_combos must be at least 1')
     .optional(),
   rotation: yup.boolean().optional(),
   all_atom: yup.boolean().optional(),

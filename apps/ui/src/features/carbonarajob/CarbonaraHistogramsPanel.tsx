@@ -138,19 +138,37 @@ const CarbonaraHistogramsPanel = ({
           Filter predictions by χ² ≤ {chi2Filter.toFixed(2)} (
           {filtered.length} / {predictions.length} shown)
         </Typography>
-        <Slider
-          value={chi2Filter}
-          min={0.5}
-          max={maxChi2}
-          step={0.1}
-          marks={[
-            { value: 1, label: '1' },
-            { value: chi2Threshold, label: `${chi2Threshold} (threshold)` }
-          ]}
-          valueLabelDisplay="auto"
-          onChange={(_e, val) => setChi2Filter(Array.isArray(val) ? val[0]! : val)}
-          sx={{ maxWidth: 480 }}
-        />
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            flexWrap: 'wrap'
+          }}
+        >
+          <Slider
+            value={chi2Filter}
+            min={0.5}
+            max={maxChi2}
+            step={0.1}
+            marks={[
+              { value: 1, label: '1' },
+              { value: chi2Threshold, label: '' }
+            ]}
+            valueLabelDisplay="auto"
+            onChange={(_e, val) =>
+              setChi2Filter(Array.isArray(val) ? val[0]! : val)
+            }
+            sx={{ flex: '1 1 320px', maxWidth: 480 }}
+          />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            χ² threshold = {chi2Threshold} (default cutoff)
+          </Typography>
+        </Box>
       </Box>
 
       {/* Rg histogram — directly under the χ² slider that filters it */}
@@ -172,6 +190,8 @@ const CarbonaraHistogramsPanel = ({
           <XAxis
             dataKey="bin"
             type="number"
+            domain={['dataMin', 'dataMax']}
+            padding={{ left: 16, right: 16 }}
             tickFormatter={(v: number) => v.toFixed(1)}
             label={{
               value: 'Rg (Å)',
@@ -241,6 +261,8 @@ const CarbonaraHistogramsPanel = ({
           <XAxis
             dataKey="bin"
             type="number"
+            domain={['dataMin', 'dataMax']}
+            padding={{ left: 16, right: 16 }}
             tickFormatter={(v: number) => v.toFixed(2)}
             label={{
               value: metric === 'rmsd' ? 'RMSD (Å)' : 'TM-score',

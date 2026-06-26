@@ -31,6 +31,10 @@ const createCarbonaraJob = async (req: Request, res: Response) => {
     const upload = multer({ storage: storage })
     upload.fields([
       { name: 'pdb_file', maxCount: 1 },
+      // Additional structures for a multi-structure mixture (species 2..n).
+      { name: 'mixture_pdb_files', maxCount: 7 },
+      // Optional full experimental sequence for missing-residue checking.
+      { name: 'fasta_file', maxCount: 1 },
       { name: 'dat_file', maxCount: 1 },
       { name: 'pae_file', maxCount: 1 },
       { name: 'constraints_file', maxCount: 1 }

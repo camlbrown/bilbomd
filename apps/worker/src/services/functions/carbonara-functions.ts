@@ -25,6 +25,7 @@ export interface CarbonaraJobParameters {
   max_q_start: number
   max_fit_steps: number
   mixture_n: number
+  max_mixture_combos?: number
   rotation?: boolean
   alphaFoldFlex?: boolean
   pae?: string
@@ -41,6 +42,9 @@ export interface CarbonaraJobJson {
   carbonara_root: string
   pdb: string
   saxs: string
+  // Multi-structure mixture: in-container paths to additional structures
+  // (species 2..n). Omitted for single-structure / same-structure-mixture jobs.
+  mixture_pdbs?: string[]
   workdir: string
   outdir: string
   parameters: CarbonaraJobParameters
@@ -70,6 +74,9 @@ export interface BuildCarbonaraJobJsonOptions {
   // chain_merges is emitted ONLY when multimer===true AND chainMerges.length>0.
   multimer?: boolean
   chainMerges?: number[][]
+  // Multi-structure mixture: basenames of the additional structure files in the
+  // job mount (species 2..n). Emitted as job.json mixture_pdbs when present.
+  mixturePdbFileNames?: string[]
 }
 
 /**
@@ -99,6 +106,15 @@ export const buildCarbonaraJobJson = (
     rotation: opts.parameters.rotation ?? false
   }
 
+  // Only forward max_mixture_combos for real mixtures (the wrapper passes it to
+  // the setup script only when present).
+  if (
+    opts.parameters.mixture_n > 1 &&
+    opts.parameters.max_mixture_combos !== undefined
+  ) {
+    baseParameters.max_mixture_combos = opts.parameters.max_mixture_combos
+  }
+
   if (opts.flexMode === 'manual' && opts.flexRanges && opts.flexRanges.length > 0) {
     // Manual residue-range flexibility: convert [{chain, ranges}] to
     // {"<chain>": [[start,stop],...]} object form for the wrapper.
@@ -125,7 +141,7 @@ export const buildCarbonaraJobJson = (
     baseParameters.chain_merges = opts.chainMerges
   }
 
-  return {
+  const jobJson: CarbonaraJobJson = {
     job_name: opts.jobName,
     carbonara_root: opts.carbonaraRoot,
     pdb: `${CARBONARA_JOB_MOUNT}/${opts.pdbFileName}`,
@@ -134,6 +150,15 @@ export const buildCarbonaraJobJson = (
     outdir: `${CARBONARA_JOB_MOUNT}/results`,
     parameters: baseParameters
   }
+
+  // Multi-structure mixture: additional structure paths in the job mount.
+  if (opts.mixturePdbFileNames && opts.mixturePdbFileNames.length > 0) {
+    jobJson.mixture_pdbs = opts.mixturePdbFileNames.map(
+      (name) => `${CARBONARA_JOB_MOUNT}/${name}`
+    )
+  }
+
+  return jobJson
 }
 
 export interface BuildCarbonaraContainerArgsOptions {
@@ -148,6 +173,10 @@ export interface BuildCarbonaraContainerArgsOptions {
   // dev iteration without an image rebuild. When non-empty, inserts
   // -v <runnerMountHost>:<runnerPath>:ro,Z before the image arg.
   runnerMountHost?: string
+  // Optional host path + in-container path to overlay an updated
+  // CarbonaraDataTools.py (mount-to-validate before an image rebuild).
+  dataToolsMountHost?: string
+  dataToolsPath?: string
 }
 
 /**
@@ -158,7 +187,8 @@ export interface BuildCarbonaraContainerArgsOptions {
  *
  * When opts.runnerMountHost is non-empty, an additional bind-mount is inserted
  * before the image arg so the host wrapper overlays the baked-in copy without
- * requiring an image rebuild (CARBONARA_RUNNER_MOUNT dev workflow).
+ * requiring an image rebuild (CARBONARA_RUNNER_MOUNT dev workflow). The same
+ * applies to opts.dataToolsMountHost for CarbonaraDataTools.py.
  */
 export const buildCarbonaraContainerArgs = (
   opts: BuildCarbonaraContainerArgsOptions
@@ -168,6 +198,9 @@ export const buildCarbonaraContainerArgs = (
   const args = ['run', '--rm', '-v', `${opts.hostJobDir}:${CARBONARA_JOB_MOUNT}:Z`]
   if (opts.runnerMountHost) {
     args.push('-v', `${opts.runnerMountHost}:${opts.runnerPath}:ro,Z`)
+  }
+  if (opts.dataToolsMountHost && opts.dataToolsPath) {
+    args.push('-v', `${opts.dataToolsMountHost}:${opts.dataToolsPath}:ro,Z`)
   }
   args.push(opts.image, opts.pythonBin, opts.runnerPath, '--job-json', jobJson, '--clean')
   return args
@@ -294,13 +327,51 @@ export interface BuildReconstructionPlanOptions {
  * The caller should log a warning when the returned array is shorter than the
  * input.
  */
+const baseName = (f: string): string => f.split('/').at(-1) ?? f
+const speciesIndexOf = (f: string): number => {
+  const m = baseName(f).match(/_sub_(\d+)_/)
+  return m ? Number(m[1]) : 0
+}
+const runIndexOf = (f: string): number => {
+  const m = baseName(f).match(/mol(\d+)_/)
+  return m ? Number(m[1]) : 0
+}
+
 export const buildReconstructionPlan = (
   opts: BuildReconstructionPlanOptions
 ): ReconstructionTask[] => {
   const { coordsFiles, scenarioRoot, outRoot, maxModels } = opts
-  const capped = coordsFiles.slice(0, maxModels)
-  return capped.map((coords) => {
-    const base = coords.split('/').at(-1) ?? coords
+
+  // For a mixture (multiple species per run, i.e. some _sub_<j>_ with j>0) the
+  // weighted assessment needs COMPLETE per-run species sets, so cap by whole
+  // run-groups rather than slicing individual files (which could leave a partial
+  // mixture state). Single-structure runs keep the simple flat cap.
+  const speciesCount = coordsFiles.reduce(
+    (mx, f) => Math.max(mx, speciesIndexOf(f) + 1),
+    1
+  )
+  let selected: string[]
+  if (speciesCount > 1) {
+    const byRun = new Map<number, string[]>()
+    for (const f of coordsFiles) {
+      const r = runIndexOf(f)
+      const arr = byRun.get(r) ?? []
+      arr.push(f)
+      byRun.set(r, arr)
+    }
+    selected = []
+    for (const r of [...byRun.keys()].sort((a, b) => a - b)) {
+      const grp = byRun.get(r) as string[]
+      if (selected.length > 0 && selected.length + grp.length > maxModels) break
+      selected.push(...grp)
+    }
+    if (selected.length === 0) selected = coordsFiles.slice(0, maxModels)
+  } else {
+    selected = coordsFiles.slice(0, maxModels)
+  }
+
+  return selected.map((coords) => {
+    const base = baseName(coords)
     const fingerprint = `${scenarioRoot}/${fingerprintForCoords(base)}`
     const name = backmapNameForCoords(base)
     const outdir = `${outRoot}/${name}`
@@ -722,4 +793,113 @@ export const runCarbonaraContainer = async (
     rlOut?.close()
     rlErr?.close()
   }
+}
+
+// ---------------------------------------------------------------------------
+// MultiFoXS (BilboMD's IMP multi_foxs) — rigorous all-atom mixture weighting.
+// Runs in the BilboMD worker image (which ships /usr/bin/multi_foxs) on the
+// backmapped per-species PDBs + experimental SAXS, producing ensemble models
+// with per-species weights and chi². Used only for mixture jobs; does not touch
+// the multi/classic pipeline code — just invokes the same binary on our data.
+// ---------------------------------------------------------------------------
+
+export interface BuildMultiFoxsContainerArgsOptions {
+  image: string
+  multiFoxsBin: string
+  hostJobDir: string
+  // In-container working dir (under the /job mount) where multi_foxs writes
+  // ensembles_size_*.txt / multi_state_model_*.fit.
+  outDirContainer: string
+  saxsContainer: string
+  speciesPdbsContainer: string[]
+  numStates: number
+}
+
+/**
+ * podman run --rm --user root -v <hostJobDir>:/job:Z <image> \
+ *   bash -lc 'cd <outdir> && <multi_foxs> -s <N> <saxs> <pdb1> <pdb2> ...'
+ * --user root is required: the worker image runs as a non-root user, and rootless
+ * podman maps container-root to the host user so outputs land in the mounted dir.
+ */
+export const buildMultiFoxsContainerArgs = (
+  opts: BuildMultiFoxsContainerArgsOptions
+): string[] => {
+  const q = (s: string) => `"${s}"`
+  const pdbs = opts.speciesPdbsContainer.map(q).join(' ')
+  const inner =
+    `mkdir -p ${q(opts.outDirContainer)} && cd ${q(opts.outDirContainer)} && ` +
+    `${q(opts.multiFoxsBin)} -s ${opts.numStates} ${q(opts.saxsContainer)} ${pdbs}`
+  return [
+    'run',
+    '--rm',
+    '--user',
+    'root',
+    '-v',
+    `${opts.hostJobDir}:${CARBONARA_JOB_MOUNT}:Z`,
+    opts.image,
+    'bash',
+    '-lc',
+    inner
+  ]
+}
+
+export interface MultiFoxsEnsemble {
+  chi2: number
+  members: { pdb: string; weight: number }[]
+}
+
+/**
+ * Parse a multi_foxs ensembles_size_<N>.txt file and return the best (rank-1)
+ * ensemble. Format:
+ *   1 |  1.16 | x1 1.16 (1.05, 0.00)
+ *       0   | 0.691 (0.691, 1.000) | sp2.pdb (0.500)
+ *       1   | 0.309 (0.309, 1.000) | sp1.pdb (0.500)
+ */
+export const parseMultiFoxsEnsembles = (
+  text: string
+): MultiFoxsEnsemble | null => {
+  let best: MultiFoxsEnsemble | null = null
+  let cur: MultiFoxsEnsemble | null = null
+  for (const raw of text.split('\n')) {
+    if (!raw.trim()) continue
+    // Ensemble header lines start with the rank digit in column 0; species
+    // lines are indented.
+    if (/^\d/.test(raw)) {
+      if (best) break // only the first (best) ensemble is needed
+      const chi2 = Number(raw.split('|')[1]?.trim())
+      cur = { chi2: Number.isFinite(chi2) ? chi2 : NaN, members: [] }
+      best = cur
+    } else if (cur) {
+      const parts = raw.split('|')
+      if (parts.length >= 3) {
+        const weight = Number(parts[1]?.trim().split(/\s+/)[0])
+        const pdb = parts[2]?.trim().split(/\s+/)[0]
+        if (pdb && Number.isFinite(weight)) {
+          cur.members.push({ pdb, weight })
+        }
+      }
+    }
+  }
+  return best && best.members.length > 0 ? best : null
+}
+
+/** Parse a multi_foxs .fit file (q, exp_intensity, error, model_intensity). */
+export const parseMultiFoxsFit = (
+  text: string
+): { q: number; exp: number; model: number; error: number }[] => {
+  const rows: { q: number; exp: number; model: number; error: number }[] = []
+  for (const raw of text.split('\n')) {
+    const s = raw.trim()
+    if (!s || s.startsWith('#')) continue
+    const p = s.split(/\s+/)
+    if (p.length < 4) continue
+    const q = Number(p[0])
+    const exp = Number(p[1])
+    const error = Number(p[2])
+    const model = Number(p[3])
+    if ([q, exp, error, model].every((v) => Number.isFinite(v))) {
+      rows.push({ q, exp, model, error })
+    }
+  }
+  return rows
 }

@@ -27,8 +27,6 @@ import { Form, Formik, Field, FormikHelpers } from 'formik'
 import FileSelect from 'features/jobs/FileSelect'
 import {
   useAddNewCarbonaraJobMutation,
-  useAddCarbonaraInitFoxsMutation,
-  useLazyGetCarbonaraInitFoxsQuery,
   useAddCarbonaraAutoFlexMutation,
   useLazyGetCarbonaraAutoFlexQuery
 } from 'slices/jobsApiSlice'
@@ -42,13 +40,15 @@ import LinearProgress from '@mui/material/LinearProgress'
 import HeaderBox from 'components/HeaderBox'
 import useTitle from 'hooks/useTitle'
 import JobSuccessAlert from 'features/jobs/JobSuccessAlert'
-import InitialFitChart from 'features/carbonarajob/InitialFitChart'
+import CarbonaraInitFitCheck from 'features/carbonarajob/CarbonaraInitFitCheck'
 import CarbonaraStructureViewer, {
   FlexSegment,
   ViewerConstraint
 } from 'features/carbonarajob/CarbonaraStructureViewer'
 import { carbonaraChainColorHex } from 'features/carbonarajob/carbonaraChainPalette'
 import CarbonaraPaePlot from 'features/carbonarajob/CarbonaraPaePlot'
+import CarbonaraPdbCheckPanel from 'features/carbonarajob/CarbonaraPdbCheckPanel'
+import CarbonaraFastaCheckPanel from 'features/carbonarajob/CarbonaraFastaCheckPanel'
 
 interface ConstraintPairRow {
   res1: string
@@ -69,11 +69,16 @@ interface FlexRangeRow {
 interface CarbonaraJobFormValues {
   title: string
   pdb_file: string
+  // Optional full experimental sequence (advisory missing-residue check).
+  fasta_file: string
   dat_file: string
   fit_n_times: number
   min_q: number
   max_q: number
   max_fit_steps: number
+  // Mixture/ensemble refinement (used only when oligomeric state = mixture).
+  mixture_n: number
+  max_mixture_combos: number
   all_atom: boolean
   do_foxs: boolean
   pae_file: string
@@ -91,6 +96,22 @@ const emptyPairRow = (): ConstraintPairRow => ({
 })
 
 const emptyFlexRow = (): FlexRangeRow => ({ chain: '1', start: '', stop: '' })
+
+// Map flexibility range rows to viewer highlight segments (drops invalid rows).
+const rowsToFlexSegments = (rows: FlexRangeRow[]): FlexSegment[] =>
+  rows
+    .map((r) => ({
+      chain: parseInt(r.chain, 10),
+      start: parseInt(r.start, 10),
+      stop: parseInt(r.stop, 10)
+    }))
+    .filter(
+      (s) =>
+        Number.isFinite(s.chain) &&
+        Number.isFinite(s.start) &&
+        Number.isFinite(s.stop) &&
+        s.stop >= s.start
+    )
 
 // Translate user-defined subunit groups (sets of chain ids merged into one rigid
 // subunit) into the sequential, renumbering 1-based chain-index pairs that the
@@ -188,118 +209,12 @@ const ConstraintsFileParser = ({
   return null
 }
 
-// B5: fire the initial-fit preview ONLY when the inputs actually change, via an
-// effect — not from render. A render-time trigger re-fired on every state update
-// (incl. preview completion), causing an infinite preview loop. Rendered inside
-// the Formik tree so it sees current values; effect deps gate re-runs.
-const InitialFitTrigger = ({
-  pdbFile,
-  datFile,
-  maxQ,
-  onTrigger
-}: {
-  pdbFile: string
-  datFile: string
-  maxQ: number
-  onTrigger: (pdb: string, dat: string, maxQ: number) => void
-}) => {
-  useEffect(() => {
-    if (pdbFile && datFile) {
-      onTrigger(pdbFile, datFile, maxQ)
-    }
-  }, [pdbFile, datFile, maxQ, onTrigger])
-  return null
-}
-
 const NewCarbonaraJobForm = () => {
   useTitle('BilboMD: New Carbonara Job')
 
   const [addNewCarbonaraJob, { isSuccess, data: jobResponse }] =
     useAddNewCarbonaraJobMutation()
   const [submitError, setSubmitError] = useState<string | null>(null)
-
-  // B5: initial scattering check state
-  const [addCarbonaraInitFoxs] = useAddCarbonaraInitFoxsMutation()
-  const [triggerGetPreview] = useLazyGetCarbonaraInitFoxsQuery()
-  const [previewStatus, setPreviewStatus] = useState<
-    'idle' | 'loading' | 'done' | 'error'
-  >('idle')
-  const [previewChi2, setPreviewChi2] = useState<number | null>(null)
-  const [previewC1, setPreviewC1] = useState<number | null>(null)
-  const [previewC2, setPreviewC2] = useState<number | null>(null)
-  const [previewFoxs, setPreviewFoxs] = useState<
-    { q: number; exp: number; model: number; error: number }[] | null
-  >(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  // Refs to track the active preview poll so we can cancel when inputs change
-  const previewPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const previewIdRef = useRef<string | null>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const stopPreviewPoll = useCallback(() => {
-    if (previewPollRef.current) {
-      clearInterval(previewPollRef.current)
-      previewPollRef.current = null
-    }
-  }, [])
-
-  const startPreview = useCallback(
-    async (pdbFile: string, datFile: string, maxQ: number) => {
-      setPreviewStatus('loading')
-      setPreviewChi2(null)
-      setPreviewC1(null)
-      setPreviewC2(null)
-      setPreviewFoxs(null)
-      setPreviewError(null)
-      stopPreviewPoll()
-
-      let previewId: string
-      try {
-        const form = new FormData()
-        form.append('pdb_file', pdbFile)
-        form.append('dat_file', datFile)
-        form.append('max_q', String(maxQ))
-        const result = await addCarbonaraInitFoxs(form).unwrap()
-        previewId = result.previewId
-        previewIdRef.current = previewId
-      } catch {
-        setPreviewStatus('error')
-        setPreviewError('Failed to submit preview request')
-        return
-      }
-
-      const started = Date.now()
-      const CAP_MS = 60_000
-
-      previewPollRef.current = setInterval(async () => {
-        if (Date.now() - started > CAP_MS) {
-          stopPreviewPoll()
-          setPreviewStatus('error')
-          setPreviewError('Preview timed out (60 s)')
-          return
-        }
-        try {
-          const data = await triggerGetPreview(previewId).unwrap()
-          if (data.status === 'done') {
-            stopPreviewPoll()
-            setPreviewChi2(data.chi2 ?? null)
-            setPreviewC1(data.c1 ?? null)
-            setPreviewC2(data.c2 ?? null)
-            setPreviewFoxs(data.foxs ?? null)
-            setPreviewStatus('done')
-          } else if (data.status === 'error') {
-            stopPreviewPoll()
-            setPreviewStatus('error')
-            setPreviewError(data.message ?? 'Preview failed')
-          }
-          // status === 'pending': keep polling
-        } catch {
-          // transient fetch error: keep polling until cap
-        }
-      }, 2000)
-    },
-    [addCarbonaraInitFoxs, triggerGetPreview, stopPreviewPoll]
-  )
 
   // B2.4: Carbonara auto-flexibility prepare-step state.
   const [addCarbonaraAutoFlex] = useAddCarbonaraAutoFlexMutation()
@@ -320,7 +235,12 @@ const NewCarbonaraJobForm = () => {
   }, [])
 
   const startAutoFlex = useCallback(
-    async (pdbFile: string, datFile: string, minQ: number, maxQ: number) => {
+    async (
+      pdbFile: File | string,
+      datFile: string,
+      minQ: number,
+      maxQ: number
+    ) => {
       setAutoFlexStatus('loading')
       setAutoFlexRanges([])
       setAutoFlexError(null)
@@ -401,7 +321,7 @@ const NewCarbonaraJobForm = () => {
 
   const startPaeFlex = useCallback(
     async (
-      pdbFile: string,
+      pdbFile: File | string,
       datFile: string,
       paeFile: string,
       threshold: number,
@@ -491,6 +411,19 @@ const NewCarbonaraJobForm = () => {
     'monomer' | 'multimer' | 'mixture'
   >('monomer')
   const [affineRotation, setAffineRotation] = useState<boolean>(false)
+  // Multi-structure mixture: additional uploaded structures (species 2..n).
+  // Empty => same-structure mixture (mixture_n copies of the one upload).
+  const [extraStructures, setExtraStructures] = useState<File[]>([])
+  // Mixture advanced settings: when true, use the manual max_mixture_combos
+  // value instead of the auto default (~5 per structure).
+  const [mixtureCombosOverride, setMixtureCombosOverride] = useState(false)
+  // Multi-structure mixture: which structure the Block-2 viewer shows.
+  // 0 = primary (pdb_file); 1..n = extraStructures[idx-1].
+  const [activeStructure, setActiveStructure] = useState(0)
+  // Keep the selection in range when the set of extra structures changes.
+  useEffect(() => {
+    if (activeStructure > extraStructures.length) setActiveStructure(0)
+  }, [extraStructures, activeStructure])
   const [mergeGroups, setMergeGroups] = useState<string[][]>([])
   const [mergeSelection, setMergeSelection] = useState<string[]>([])
 
@@ -528,12 +461,38 @@ const NewCarbonaraJobForm = () => {
   const [viewerChains, setViewerChains] = useState<string[]>([])
   const [hiddenChains, setHiddenChains] = useState<string[]>([])
 
+  // Per-structure snapshots of the Flexibility form (Auto / Manual / PAE) so the
+  // single, identical Flexibility sub-block can be driven for each mixture
+  // structure: toggling saves the current structure's form and restores the
+  // target's. Keyed by structure index (0 = primary, 1..n = extras).
+  type FlexFormSnapshot = {
+    flexMode: 'auto' | 'manual'
+    flexRangeRows: FlexRangeRow[]
+    autoFlexStatus: 'idle' | 'loading' | 'done' | 'error'
+    autoFlexRanges: FlexRangeRow[]
+    autoFlexError: string | null
+    paeFlexStatus: 'idle' | 'loading' | 'done' | 'error'
+    paeFlexRanges: FlexRangeRow[]
+    paeFlexError: string | null
+  }
+  const flexFormSnapshots = useRef<Record<number, FlexFormSnapshot>>({})
+  // The viewer re-fires onChainsDetected whenever structureFile changes, which
+  // includes a structure toggle. This suppresses the stale-result reset for that
+  // single fire so the restored snapshot survives; a genuine new upload (no
+  // toggle) still resets normally.
+  const suppressFlexResetRef = useRef(false)
+
   // Stable callback for the viewer: record detected chains and reset any
   // chain-visibility toggles + stale auto-flexibility results when a new
   // structure loads.
   const handleChainsDetected = useCallback((chains: string[]) => {
     setViewerChains(chains)
     setHiddenChains([])
+    if (suppressFlexResetRef.current) {
+      // Triggered by a structure toggle — keep the restored snapshot intact.
+      suppressFlexResetRef.current = false
+      return
+    }
     setAutoFlexStatus('idle')
     setAutoFlexRanges([])
     setAutoFlexError(null)
@@ -543,6 +502,65 @@ const NewCarbonaraJobForm = () => {
     setMergeGroups([])
     setMergeSelection([])
   }, [])
+
+  // Switch which mixture structure the (single, shared) Flexibility sub-block is
+  // editing. Saves the current structure's form, cancels any in-flight detection
+  // so its poll can't bleed into the next structure, then restores the target's
+  // saved form (or fresh defaults). The viewer reload that follows re-fires
+  // onChainsDetected, which we suppress so the restore survives.
+  const switchActiveStructure = useCallback(
+    (next: number) => {
+      if (next === activeStructure) return
+      stopAutoFlexPoll()
+      stopPaeFlexPoll()
+      flexFormSnapshots.current[activeStructure] = {
+        flexMode,
+        flexRangeRows,
+        // a cancelled in-flight detection must not restore as 'loading'
+        autoFlexStatus: autoFlexStatus === 'loading' ? 'idle' : autoFlexStatus,
+        autoFlexRanges,
+        autoFlexError,
+        paeFlexStatus: paeFlexStatus === 'loading' ? 'idle' : paeFlexStatus,
+        paeFlexRanges,
+        paeFlexError
+      }
+      suppressFlexResetRef.current = true
+      const snap = flexFormSnapshots.current[next]
+      if (snap) {
+        setFlexMode(snap.flexMode)
+        setFlexRangeRows(snap.flexRangeRows)
+        setAutoFlexStatus(snap.autoFlexStatus)
+        setAutoFlexRanges(snap.autoFlexRanges)
+        setAutoFlexError(snap.autoFlexError)
+        setPaeFlexStatus(snap.paeFlexStatus)
+        setPaeFlexRanges(snap.paeFlexRanges)
+        setPaeFlexError(snap.paeFlexError)
+      } else {
+        setFlexMode('auto')
+        setFlexRangeRows([emptyFlexRow()])
+        setAutoFlexStatus('idle')
+        setAutoFlexRanges([])
+        setAutoFlexError(null)
+        setPaeFlexStatus('idle')
+        setPaeFlexRanges([])
+        setPaeFlexError(null)
+      }
+      setActiveStructure(next)
+    },
+    [
+      activeStructure,
+      flexMode,
+      flexRangeRows,
+      autoFlexStatus,
+      autoFlexRanges,
+      autoFlexError,
+      paeFlexStatus,
+      paeFlexRanges,
+      paeFlexError,
+      stopAutoFlexPoll,
+      stopPaeFlexPoll
+    ]
+  )
 
   // B4: per-chain colour map. When affine-rotation merging is active each merged
   // subunit shares the colour of its lowest-index chain; otherwise each chain
@@ -585,19 +603,7 @@ const NewCarbonaraJobForm = () => {
         : flexMode === 'auto'
           ? autoFlexRanges
           : []
-    return rows
-      .map((r) => ({
-        chain: parseInt(r.chain, 10),
-        start: parseInt(r.start, 10),
-        stop: parseInt(r.stop, 10)
-      }))
-      .filter(
-        (s) =>
-          Number.isFinite(s.chain) &&
-          Number.isFinite(s.start) &&
-          Number.isFinite(s.stop) &&
-          s.stop >= s.start
-      )
+    return rowsToFlexSegments(rows)
   }, [flexMode, flexRangeRows, autoFlexRanges])
 
   // Constraints state — managed outside Formik (file/pairs are UI-only state)
@@ -634,26 +640,13 @@ const NewCarbonaraJobForm = () => {
       )
   }, [constraintsMethod, constraintPairs, fileConstraints])
 
-  // Debounced trigger: called when pdb_file, dat_file, or max_q change
-  const triggerPreviewDebounced = useCallback(
-    (pdbFile: string, datFile: string, maxQ: number) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => {
-        startPreview(pdbFile, datFile, maxQ).catch(() => undefined)
-      }, 800)
-    },
-    [startPreview]
-  )
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopPreviewPoll()
       stopAutoFlexPoll()
       stopPaeFlexPoll()
-      if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [stopPreviewPoll, stopAutoFlexPoll, stopPaeFlexPoll])
+  }, [stopAutoFlexPoll, stopPaeFlexPoll])
 
   const successResponse = jobResponse
     ? {
@@ -666,11 +659,14 @@ const NewCarbonaraJobForm = () => {
   const initialValues: CarbonaraJobFormValues = {
     title: '',
     pdb_file: '',
+    fasta_file: '',
     dat_file: '',
     fit_n_times: 4,
     min_q: 0.01,
     max_q: 0.2,
     max_fit_steps: 1000,
+    mixture_n: 2,
+    max_mixture_combos: 10,
     all_atom: false,
     do_foxs: true,
     pae_file: '',
@@ -687,28 +683,68 @@ const NewCarbonaraJobForm = () => {
     const form = new FormData()
     form.append('title', values.title)
     form.append('pdb_file', values.pdb_file)
+    // Optional FASTA (advisory missing-residue check). Only send a real upload.
+    // (Formik types file fields as string but holds a File at runtime.)
+    if ((values.fasta_file as unknown) instanceof File) {
+      form.append('fasta_file', values.fasta_file as unknown as File)
+    }
     form.append('dat_file', values.dat_file)
     form.append('fit_n_times', values.fit_n_times.toString())
     form.append('min_q', values.min_q.toString())
     form.append('max_q', values.max_q.toString())
     form.append('max_fit_steps', values.max_fit_steps.toString())
     // B4: the `rotation` flag is derived from local UI state (oligomeric state +
-    // affine toggle), not a Formik field — affine rotation only applies to a
-    // multimer.
+    // affine toggle), not a Formik field. Affine rotation samples rigid-body
+    // motion of subunits, so it applies to a multimer and to a mixture of
+    // multimers — but never to a monomer.
     const isMultimer = oligomericState === 'multimer'
-    const affineOn = isMultimer && affineRotation
+    const affineOn = oligomericState !== 'monomer' && affineRotation
     form.append('rotation', affineOn.toString())
-    form.append('all_atom', values.all_atom.toString())
+
+    // Mixture/ensemble. all_atom must be on so the per-species models exist for
+    // the all-atom weighting; force it for a mixture. The number of states is
+    // either the chosen copy count (one structure) or the number of uploaded
+    // structures (multi-structure). Weight combinations are auto-derived
+    // (~5 per state) rather than exposed, per the Carbonara author.
+    const isMixture = oligomericState === 'mixture'
+    const allAtom = isMixture ? true : values.all_atom
+    form.append('all_atom', allAtom.toString())
     form.append('do_foxs', values.do_foxs.toString())
+    if (isMixture) {
+      const effectiveMixtureN =
+        extraStructures.length > 0
+          ? 1 + extraStructures.length
+          : values.mixture_n
+      form.append('mixture_n', effectiveMixtureN.toString())
+      const combos = mixtureCombosOverride
+        ? values.max_mixture_combos
+        : 5 * effectiveMixtureN
+      form.append('max_mixture_combos', combos.toString())
+      for (const f of extraStructures) {
+        form.append('mixture_pdb_files', f)
+      }
+    } else {
+      form.append('mixture_n', '1')
+    }
 
     // B7/B2.5: emit flex_mode and mode-specific data. PAE is no longer a
     // submission mode of its own — the PAE side aid (Block 2) feeds its computed
     // ranges into Manual, so PAE-guided fits submit as explicit manual ranges.
-    form.append('flex_mode', flexMode)
-    if (flexMode === 'manual') {
+    // Structure 1's flexibility form may be snapshotted away if the user toggled
+    // to another mixture structure before submitting; resolve it here. (Extra
+    // structures auto-detect their flexibility at run time in the worker.)
+    const s1Snap = flexFormSnapshots.current[0]
+    const submitFlexMode =
+      activeStructure === 0 ? flexMode : (s1Snap?.flexMode ?? flexMode)
+    const submitFlexRows =
+      activeStructure === 0
+        ? flexRangeRows
+        : (s1Snap?.flexRangeRows ?? flexRangeRows)
+    form.append('flex_mode', submitFlexMode)
+    if (submitFlexMode === 'manual') {
       form.append('alphafold_flex', 'false')
       // Group valid rows by chain into [{chain, ranges:[...]}] format
-      const validRows = flexRangeRows.filter(
+      const validRows = submitFlexRows.filter(
         (r) => r.chain && r.start && r.stop
       )
       if (validRows.length > 0) {
@@ -870,7 +906,6 @@ const NewCarbonaraJobForm = () => {
               values,
               errors,
               touched,
-              isValid,
               isSubmitting,
               handleChange,
               handleBlur,
@@ -915,6 +950,70 @@ const NewCarbonaraJobForm = () => {
                       />
                     </Box>
 
+                    {/* Carbonara workflow type — chosen first; it drives the
+                        structure-upload stage below (mixture allows multiple
+                        structures) and the Block-2 affine/merge sub-block. */}
+                    <Box sx={{ mt: 2, mb: 2 }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ fontWeight: 600, mb: 0.5 }}
+                      >
+                        Workflow type
+                      </Typography>
+                      <ToggleButtonGroup
+                        exclusive
+                        size="small"
+                        value={oligomericState}
+                        onChange={(_e, v) => {
+                          if (!v) return
+                          setOligomericState(v)
+                          // Affine rotation applies to multimer + mixture; only
+                          // monomer disables it.
+                          if (v === 'monomer') setAffineRotation(false)
+                          if (v !== 'mixture') setExtraStructures([])
+                        }}
+                      >
+                        <ToggleButton
+                          value="monomer"
+                          disabled={isSubmitting}
+                        >
+                          Monomer
+                        </ToggleButton>
+                        <ToggleButton
+                          value="multimer"
+                          disabled={isSubmitting}
+                        >
+                          Multimer
+                        </ToggleButton>
+                        <ToggleButton
+                          value="mixture"
+                          disabled={isSubmitting}
+                        >
+                          Mixture
+                        </ToggleButton>
+                      </ToggleButtonGroup>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: 'block', mt: 0.5 }}
+                      >
+                        {oligomericState === 'monomer'
+                          ? 'A single subunit — no inter-subunit rotation.'
+                          : oligomericState === 'multimer'
+                            ? 'Multiple subunits — enable affine (rigid-body) rotations and chain merging in Block 2.'
+                            : 'Fit an ensemble. Upload one structure (refined into several copies) or several different structures (e.g. conformations) to weight against the SAXS data. All-atom reconstruction is enabled automatically.'}
+                      </Typography>
+                    </Box>
+
+                    {oligomericState === 'mixture' && (
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ mt: 1, fontWeight: 600 }}
+                      >
+                        Structure 1
+                      </Typography>
+                    )}
+
                     <Grid>
                       <Field
                         name="pdb_file"
@@ -930,6 +1029,233 @@ const NewCarbonaraJobForm = () => {
                         fileExt=".pdb,.cif"
                       />
                     </Grid>
+
+                    {/* Mixture: choose copies of one structure, OR add more
+                        structures (different conformations) for a multi-structure
+                        mixture. Weight combinations are auto-derived. */}
+                    {oligomericState === 'mixture' && (
+                      <Box sx={{ mt: 1, mb: 1 }}>
+                        {extraStructures.length === 0 ? (
+                          <Field
+                            label="Number of copies (mixture_n)"
+                            name="mixture_n"
+                            type="number"
+                            size="small"
+                            disabled={isSubmitting}
+                            as={TextField}
+                            onChange={handleChange}
+                            onBlur={handleBlur}
+                            error={errors.mixture_n && touched.mixture_n}
+                            helperText={
+                              errors.mixture_n && touched.mixture_n
+                                ? errors.mixture_n
+                                : 'Copies of this one structure to fit as an ensemble (2–4) — or add more structures below.'
+                            }
+                            inputProps={{ min: 2, max: 4, step: 1 }}
+                            sx={{ width: 320 }}
+                            value={values.mixture_n}
+                          />
+                        ) : (
+                          <Typography
+                            variant="body2"
+                            sx={{ mb: 1 }}
+                          >
+                            Multi-structure mixture of{' '}
+                            <strong>{1 + extraStructures.length}</strong>{' '}
+                            structures (Structure 1 + {extraStructures.length}{' '}
+                            additional).
+                          </Typography>
+                        )}
+
+                        <Box sx={{ mt: 1 }}>
+                          <Button
+                            component="label"
+                            variant="outlined"
+                            size="small"
+                            disabled={isSubmitting}
+                          >
+                            {extraStructures.length > 0
+                              ? 'Change additional structures'
+                              : 'Add additional structure(s)'}
+                            <input
+                              type="file"
+                              hidden
+                              multiple
+                              accept=".pdb,.cif"
+                              onChange={(e) => {
+                                setExtraStructures(
+                                  Array.from(e.target.files ?? []).slice(0, 7)
+                                )
+                                // New structure set invalidates the per-structure
+                                // flex snapshots; restore Structure 1's form as
+                                // the live one and drop the stale snapshots.
+                                switchActiveStructure(0)
+                                flexFormSnapshots.current = {}
+                              }}
+                            />
+                          </Button>
+                          {extraStructures.length > 0 && (
+                            <Button
+                              size="small"
+                              color="inherit"
+                              disabled={isSubmitting}
+                              onClick={() => {
+                                setExtraStructures([])
+                                switchActiveStructure(0)
+                                flexFormSnapshots.current = {}
+                              }}
+                              sx={{ ml: 1 }}
+                            >
+                              Clear
+                            </Button>
+                          )}
+                        </Box>
+
+                        {extraStructures.map((f, i) => (
+                          <Typography
+                            key={`${f.name}-${i}`}
+                            variant="caption"
+                            sx={{
+                              display: 'block',
+                              fontFamily: 'monospace',
+                              mt: 0.25
+                            }}
+                          >
+                            Structure {i + 2}: {f.name}
+                          </Typography>
+                        ))}
+
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: 'block', mt: 0.5 }}
+                        >
+                          Additional structures must be the same protein/sequence
+                          as structure 1 (e.g. different conformations).
+                        </Typography>
+
+                        {/* Advanced: override the auto-derived number of weight
+                            combinations (default ~5 per structure). */}
+                        <Accordion
+                          disableGutters
+                          elevation={0}
+                          sx={{
+                            mt: 1,
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            '&:before': { display: 'none' }
+                          }}
+                        >
+                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Typography variant="body2">
+                              Advanced settings
+                            </Typography>
+                          </AccordionSummary>
+                          <AccordionDetails>
+                            <FormControlLabel
+                              control={
+                                <Checkbox
+                                  size="small"
+                                  checked={mixtureCombosOverride}
+                                  disabled={isSubmitting}
+                                  onChange={(e) =>
+                                    setMixtureCombosOverride(e.target.checked)
+                                  }
+                                />
+                              }
+                              label="Set the number of weight combinations manually"
+                            />
+                            {mixtureCombosOverride && (
+                              <Box sx={{ mt: 1 }}>
+                                <Field
+                                  label="Weight combinations"
+                                  name="max_mixture_combos"
+                                  type="number"
+                                  size="small"
+                                  disabled={isSubmitting}
+                                  as={TextField}
+                                  onChange={handleChange}
+                                  onBlur={handleBlur}
+                                  error={
+                                    errors.max_mixture_combos &&
+                                    touched.max_mixture_combos
+                                  }
+                                  helperText={
+                                    errors.max_mixture_combos &&
+                                    touched.max_mixture_combos
+                                      ? errors.max_mixture_combos
+                                      : 'Weightings to sample (1–50). Default: ~5 per structure.'
+                                  }
+                                  inputProps={{ min: 1, max: 50, step: 1 }}
+                                  sx={{ width: 260 }}
+                                  value={values.max_mixture_combos}
+                                />
+                              </Box>
+                            )}
+                          </AccordionDetails>
+                        </Accordion>
+                      </Box>
+                    )}
+
+                    {/* Flag PDB issues that would break Carbonara setup
+                        (numbering, short/dropped chains, missing/duplicate Cα,
+                        gaps, etc.) the moment a structure is selected. The Fix
+                        button replaces the upload with a corrected file. */}
+                    <CarbonaraPdbCheckPanel
+                      pdbFile={values.pdb_file}
+                      onFix={(file) => {
+                        void setFieldValue('pdb_file', file)
+                        void setFieldTouched('pdb_file', true, false)
+                      }}
+                    />
+
+                    {/* Optional, recommended: full experimental sequence. When
+                        provided, we flag residues present in the SAXS sequence
+                        but missing from the structure. Advisory only — never
+                        blocks submission. */}
+                    <Box sx={{ mt: 1 }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ fontWeight: 600 }}
+                      >
+                        Full sequence (FASTA){' '}
+                        <Box
+                          component="span"
+                          sx={{ color: 'text.secondary', fontWeight: 400 }}
+                        >
+                          — recommended, optional
+                        </Box>
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: 'block', mb: 0.5 }}
+                      >
+                        Upload the complete experimental sequence to check that
+                        every residue probed by SAXS is present in your
+                        structure. Missing residues are reported below so you can
+                        build them in before fitting.
+                      </Typography>
+                      <Grid>
+                        <Field
+                          name="fasta_file"
+                          id="fasta-file-upload"
+                          as={FileSelect}
+                          title="Select File"
+                          disabled={isSubmitting}
+                          setFieldValue={setFieldValue}
+                          setFieldTouched={setFieldTouched}
+                          error={errors.fasta_file && touched.fasta_file}
+                          errorMessage={errors.fasta_file ? errors.fasta_file : ''}
+                          fileType="full sequence *.fasta"
+                          fileExt=".fasta,.fa,.txt"
+                        />
+                      </Grid>
+                      <CarbonaraFastaCheckPanel
+                        pdbFile={values.pdb_file}
+                        fastaFile={values.fasta_file}
+                      />
+                    </Box>
 
                     <Grid>
                       <Field
@@ -947,148 +1273,31 @@ const NewCarbonaraJobForm = () => {
                       />
                     </Grid>
 
-                    {/* Oligomeric state — chosen up front. Gates the affine
-                        rotation sub-block in Block 2. Mixture is a placeholder
-                        for upcoming multi-state functionality. */}
-                    <Box sx={{ mt: 2, mb: 1 }}>
-                      <Typography
-                        variant="subtitle2"
-                        sx={{ fontWeight: 600, mb: 0.5 }}
-                      >
-                        Oligomeric state
-                      </Typography>
-                      <ToggleButtonGroup
-                        exclusive
-                        size="small"
-                        value={oligomericState}
-                        onChange={(_e, v) => {
-                          if (!v) return
-                          setOligomericState(v)
-                          if (v !== 'multimer') setAffineRotation(false)
-                        }}
-                      >
-                        <ToggleButton
-                          value="monomer"
-                          disabled={isSubmitting}
-                        >
-                          Monomer
-                        </ToggleButton>
-                        <ToggleButton
-                          value="multimer"
-                          disabled={isSubmitting}
-                        >
-                          Multimer
-                        </ToggleButton>
-                        <ToggleButton
-                          value="mixture"
-                          disabled
-                        >
-                          Mixture (coming soon)
-                        </ToggleButton>
-                      </ToggleButtonGroup>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: 'block', mt: 0.5 }}
-                      >
-                        {oligomericState === 'monomer'
-                          ? 'A single subunit — no inter-subunit rotation.'
-                          : oligomericState === 'multimer'
-                            ? 'Multiple subunits — enable affine (rigid-body) rotations and chain merging in Block 2.'
-                            : 'A mixture of oligomeric states — coming soon.'}
-                      </Typography>
-                    </Box>
-
-                    {/* B5: effect-based preview trigger (fires on input change) */}
-                    <InitialFitTrigger
+                    {/* Initial scattering check — one per uploaded structure.
+                        Structure 1 always; each additional mixture structure
+                        gets its own labelled check so the user sees a fit for
+                        every structure they uploaded. */}
+                    <CarbonaraInitFitCheck
                       pdbFile={values.pdb_file}
                       datFile={values.dat_file}
                       maxQ={values.max_q}
-                      onTrigger={triggerPreviewDebounced}
+                      label={
+                        oligomericState === 'mixture' &&
+                        extraStructures.length > 0
+                          ? 'Structure 1'
+                          : undefined
+                      }
                     />
-
-                    {previewStatus !== 'idle' && (
-                      <Box
-                        sx={{
-                          border: '1px solid',
-                          borderColor: 'divider',
-                          borderRadius: 1,
-                          p: 2,
-                          my: 2
-                        }}
-                      >
-                        <Typography
-                          variant="subtitle2"
-                          sx={{ mb: 1, fontWeight: 600 }}
-                        >
-                          Initial scattering check
-                        </Typography>
-
-                        {previewStatus === 'loading' && (
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 1
-                            }}
-                          >
-                            <CircularProgress size={16} />
-                            <Typography
-                              variant="body2"
-                              color="text.secondary"
-                            >
-                              Running initial FoXS fit…
-                            </Typography>
-                          </Box>
-                        )}
-
-                        {previewStatus === 'error' && (
-                          <Alert
-                            severity="info"
-                            variant="outlined"
-                            sx={{ mt: 1 }}
-                          >
-                            Initial check unavailable: {previewError}
-                          </Alert>
-                        )}
-
-                        {previewStatus === 'done' && previewFoxs && (
-                          <>
-                            <Typography variant="body2" sx={{ mb: 1 }}>
-                              {'Initial χ² = '}
-                              <strong>
-                                {previewChi2 != null
-                                  ? previewChi2.toFixed(3)
-                                  : 'N/A'}
-                              </strong>
-                              {previewC1 != null
-                                ? ` · c1 = ${previewC1.toFixed(2)}`
-                                : ''}
-                              {previewC2 != null
-                                ? ` · c2 = ${previewC2.toFixed(4)}`
-                                : ''}
-                            </Typography>
-                            <InitialFitChart
-                              data={previewFoxs.map((p) => ({
-                                q: p.q,
-                                exp_intensity: p.exp,
-                                model_intensity: p.model,
-                                error: p.error
-                              }))}
-                              residualsData={previewFoxs.map((p) => ({
-                                q: p.q,
-                                res:
-                                  p.error !== 0
-                                    ? Number(
-                                        ((p.exp - p.model) / p.error).toFixed(2)
-                                      )
-                                    : 0
-                              }))}
-                            />
-                          </>
-                        )}
-                      </Box>
-                    )}
+                    {oligomericState === 'mixture' &&
+                      extraStructures.map((f, i) => (
+                        <CarbonaraInitFitCheck
+                          key={`${f.name}-${i}`}
+                          pdbFile={f}
+                          datFile={values.dat_file}
+                          maxQ={values.max_q}
+                          label={`Structure ${i + 2}`}
+                        />
+                      ))}
                   </Grid>
                 </Paper>
 
@@ -1100,17 +1309,79 @@ const NewCarbonaraJobForm = () => {
                   <Typography>2 · Conformational Sampling</Typography>
                 </HeaderBox>
                 <Paper sx={{ p: 2, mb: 2 }}>
+                  {/* Multi-structure mixture: choose which uploaded structure to
+                      view/prepare. Toggle to inspect each structure in the viewer;
+                      flexibility is detected per structure only when requested. */}
+                  {oligomericState === 'mixture' &&
+                    extraStructures.length > 0 && (
+                      <Box sx={{ mb: 1 }}>
+                        <Typography
+                          variant="subtitle2"
+                          sx={{ fontWeight: 600, mb: 0.5 }}
+                        >
+                          Prepare structure
+                        </Typography>
+                        <ToggleButtonGroup
+                          exclusive
+                          size="small"
+                          value={activeStructure}
+                          onChange={(_e, v) => {
+                            if (v !== null) switchActiveStructure(v)
+                          }}
+                        >
+                          <ToggleButton
+                            value={0}
+                            disabled={isSubmitting}
+                          >
+                            Structure 1
+                          </ToggleButton>
+                          {extraStructures.map((f, i) => (
+                            <ToggleButton
+                              key={`${f.name}-${i}`}
+                              value={i + 1}
+                              disabled={isSubmitting}
+                            >
+                              Structure {i + 2}
+                            </ToggleButton>
+                          ))}
+                        </ToggleButtonGroup>
+                        {/* Active structure's PDB name (shown for every structure,
+                            including Structure 1). */}
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{
+                            display: 'block',
+                            mt: 0.5,
+                            fontFamily: 'monospace'
+                          }}
+                        >
+                          {activeStructure === 0
+                            ? (values.pdb_file as unknown) instanceof File
+                              ? (values.pdb_file as unknown as File).name
+                              : '—'
+                            : (extraStructures[activeStructure - 1]?.name ?? '—')}
+                        </Typography>
+                      </Box>
+                    )}
                   {/* B2: interactive 3D viewer — hover a residue for its name,
                       number and chain; flexible segments are highlighted yellow,
                       distance constraints drawn as dashed lines. */}
                   <CarbonaraStructureViewer
-                    structureFile={values.pdb_file}
+                    structureFile={
+                      activeStructure === 0
+                        ? values.pdb_file
+                        : (extraStructures[activeStructure - 1] ??
+                          values.pdb_file)
+                    }
                     flexSegments={flexSegments}
                     hiddenChains={hiddenChains}
-                    constraints={viewerConstraints}
+                    constraints={activeStructure === 0 ? viewerConstraints : []}
                     chainColors={chainColorMap}
                     onChainsDetected={handleChainsDetected}
-                    onConstraintsDrawn={setConstraintsDrawn}
+                    onConstraintsDrawn={
+                      activeStructure === 0 ? setConstraintsDrawn : () => {}
+                    }
                   />
                   {/* Parses an uploaded constraints file into viewer lines. */}
                   <ConstraintsFileParser
@@ -1168,7 +1439,10 @@ const NewCarbonaraJobForm = () => {
                       })}
                     </Stack>
                   )}
-                  {/* ── sub-block: Flexibility ── */}
+                  {/* ── sub-block: Flexibility ──
+                      One identical form, driven by whichever mixture structure is
+                      active (the "Prepare structure" toggle above swaps which
+                      structure's Auto / Manual / PAE selections it edits). */}
                   <Typography
                     variant="subtitle1"
                     sx={{
@@ -1241,7 +1515,10 @@ const NewCarbonaraJobForm = () => {
                           }
                           onClick={() =>
                             startAutoFlex(
-                              values.pdb_file,
+                              activeStructure === 0
+                                ? values.pdb_file
+                                : (extraStructures[activeStructure - 1] ??
+                                  values.pdb_file),
                               values.dat_file,
                               values.min_q,
                               values.max_q
@@ -1548,7 +1825,10 @@ const NewCarbonaraJobForm = () => {
                               }
                               onClick={() =>
                                 startPaeFlex(
-                                  values.pdb_file,
+                                  activeStructure === 0
+                                    ? values.pdb_file
+                                    : (extraStructures[activeStructure - 1] ??
+                                      values.pdb_file),
                                   values.dat_file,
                                   values.pae_file,
                                   values.pae_flex_threshold,
@@ -1890,10 +2170,11 @@ const NewCarbonaraJobForm = () => {
                     )}
                   </Box>
 
-                  {/* ── sub-block: Affine rotations (multimer only) ── */}
-                  {/* The oligomeric mode is chosen in Block 1; affine rotation
-                      and chain merging are only relevant for a multimer, so this
-                      sub-block is gated on that choice. */}
+                  {/* ── sub-block: Affine rotations (multimer + mixture) ── */}
+                  {/* Affine rotation and chain merging are rigid-body sampling of
+                      multiple subunits, so they apply to Multimer mode and to a
+                      Mixture of multimeric structures. Monomer mode has no
+                      subunits to rotate, so it just shows guidance. */}
                   <Typography
                     variant="subtitle1"
                     sx={{
@@ -1907,19 +2188,31 @@ const NewCarbonaraJobForm = () => {
                   >
                     Affine rotations
                   </Typography>
-                  {oligomericState !== 'multimer' ? (
+                  {oligomericState === 'monomer' ? (
                     <Alert
                       severity="info"
                       variant="outlined"
                       sx={{ py: 0.5 }}
                     >
-                      Affine rotations apply to multimers. Choose{' '}
-                      <strong>Multimer</strong> mode in Block 1 (Initial
-                      Scattering Check) to enable rigid-body rotation of subunits
-                      and chain merging.
+                      Affine rotations apply to multi-subunit proteins. Choose{' '}
+                      <strong>Multimer</strong> or <strong>Mixture</strong> mode
+                      in Block 1 (Initial Scattering Check) to enable rigid-body
+                      rotation of subunits and chain merging.
                     </Alert>
                   ) : (
                     <Box sx={{ ml: 1, mt: 1 }}>
+                      {oligomericState === 'mixture' && (
+                        <Alert
+                          severity="info"
+                          variant="outlined"
+                          sx={{ py: 0.5, mb: 1 }}
+                        >
+                          Affine rotations only have an effect when your mixture
+                          structures are <strong>multimers</strong> (more than one
+                          chain). For single-chain (monomeric) structures this
+                          option does nothing.
+                        </Alert>
+                      )}
                       <FormControlLabel
                         control={
                           <Checkbox
@@ -2305,28 +2598,64 @@ const NewCarbonaraJobForm = () => {
                   </Box>
                 )}
 
-                <Grid sx={{ mt: 2 }}>
-                  <Button
-                    type="submit"
-                    disabled={
-                      !isValid ||
-                      values.title === '' ||
-                      values.pdb_file === '' ||
-                      values.dat_file === '' ||
-                      (flexMode === 'manual' &&
-                        flexRangeRows.filter(
-                          (r) => r.chain && r.start && r.stop
-                        ).length === 0)
-                    }
-                    loading={isSubmitting}
-                    endIcon={<SendIcon />}
-                    loadingPosition="end"
-                    variant="contained"
-                    sx={{ width: '110px' }}
-                  >
-                    <span>Submit</span>
-                  </Button>
-                </Grid>
+                {(() => {
+                  // Build a human list of what's blocking submission so a greyed
+                  // Submit is never a mystery (e.g. a residue/SAXS file error
+                  // buried up in Block 1, or a missing title).
+                  const submitBlockers: string[] = []
+                  if (values.title === '')
+                    submitBlockers.push('add a job title')
+                  else if (errors.title)
+                    submitBlockers.push(String(errors.title))
+                  if (values.pdb_file === '')
+                    submitBlockers.push('upload a structure file (Block 1)')
+                  else if (errors.pdb_file)
+                    submitBlockers.push(String(errors.pdb_file))
+                  if (values.dat_file === '')
+                    submitBlockers.push('upload SAXS data (Block 1)')
+                  else if (errors.dat_file)
+                    submitBlockers.push(String(errors.dat_file))
+                  // Surface any other schema error not already covered above.
+                  Object.entries(errors).forEach(([k, v]) => {
+                    if (
+                      !['title', 'pdb_file', 'dat_file'].includes(k) &&
+                      v
+                    )
+                      submitBlockers.push(String(v))
+                  })
+                  if (
+                    flexMode === 'manual' &&
+                    flexRangeRows.filter((r) => r.chain && r.start && r.stop)
+                      .length === 0
+                  )
+                    submitBlockers.push(
+                      'add at least one flexible residue range (Manual mode)'
+                    )
+                  return (
+                    <Grid sx={{ mt: 2 }}>
+                      <Button
+                        type="submit"
+                        disabled={submitBlockers.length > 0}
+                        loading={isSubmitting}
+                        endIcon={<SendIcon />}
+                        loadingPosition="end"
+                        variant="contained"
+                        sx={{ width: '110px' }}
+                      >
+                        <span>Submit</span>
+                      </Button>
+                      {submitBlockers.length > 0 && (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: 'block', mt: 1 }}
+                        >
+                          Before you can submit: {submitBlockers.join('; ')}.
+                        </Typography>
+                      )}
+                    </Grid>
+                  )
+                })()}
 
                 {import.meta.env.MODE === 'development' ? <Debug /> : ''}
               </Form>

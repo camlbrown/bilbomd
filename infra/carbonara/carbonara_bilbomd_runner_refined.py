@@ -327,6 +327,178 @@ def copytree_contents(src: Path, dst: Path) -> None:
             shutil.copy2(item, target)
 
 
+def sanitize_input_pdb(input_pdb: Path, carbonara_root: Path) -> Path:
+    """Run Carbonara's official sanitiser on the uploaded structure before setup.
+
+    Fixes the issues the Carbonara author addressed in CarbonaraDataTools.py:
+    alternate-location / duplicate atom records (kept by highest occupancy),
+    non-amino-acid HETATM (waters/ligands) being mistaken for residues, and
+    multi-model files. Residue RENUMBERING is intentionally left OFF so that any
+    user-supplied flexible-region / distance-constraint residue numbers (chosen
+    against the uploaded numbering) stay valid — numbering is handled by the UI's
+    client-side "renumber from 1" fix instead.
+
+    Falls back to the original PDB (no change) if the sanitiser is unavailable
+    (e.g. an older baked CarbonaraDataTools.py) or errors, so a run is never
+    blocked by sanitisation.
+    """
+    try:
+        if str(carbonara_root) not in sys.path:
+            sys.path.insert(0, str(carbonara_root))
+        import CarbonaraDataTools as cdt
+
+        if not hasattr(cdt, "sanitize_pdb_for_carbonara"):
+            print(
+                "[wrapper] sanitize: sanitize_pdb_for_carbonara unavailable; using PDB as-is",
+                flush=True,
+            )
+            return input_pdb
+
+        cleaned = input_pdb.parent / f"{input_pdb.stem}.carbonara_clean.pdb"
+        out, report = cdt.sanitize_pdb_for_carbonara(
+            str(input_pdb),
+            pdb_out=str(cleaned),
+            keep_hetatm=True,
+            renumber_residues=False,
+            first_model_only=True,
+        )
+        print(f"[wrapper] sanitize report: {report}", flush=True)
+        return Path(out)
+    except Exception as exc:  # noqa: BLE001 — never block the run on sanitisation
+        print(f"[wrapper] sanitize: failed ({exc}); using PDB as-is", flush=True)
+        return input_pdb
+
+
+def clamp_q_to_saxs_range(params: dict[str, Any], input_saxs: Path) -> None:
+    """Clamp max_q / max_q_start to just inside the experimental SAXS q-range.
+
+    The Carbonara C++ fitter segfaults when max_q exceeds the data's largest q
+    (it reads one point past the end of the curve). Clamp to the SECOND-largest
+    q point, which guarantees a look-ahead point still exists. Only lowers the
+    values when they exceed the data; otherwise leaves them untouched. Mutates
+    params in place. Best-effort: any parse failure leaves params unchanged.
+    """
+    try:
+        qs: list[float] = []
+        with open(input_saxs, errors="replace") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                try:
+                    q = float(parts[0])
+                    float(parts[1])
+                except ValueError:
+                    continue
+                qs.append(q)
+        if len(qs) < 2:
+            return
+        qs = sorted(set(qs))
+        safe_qmax = qs[-2]  # strictly below the last data point
+        for key in ("max_q", "max_q_start"):
+            cur = float(params.get(key, 0.2))
+            if cur > safe_qmax:
+                print(
+                    f"[wrapper] clamping {key} {cur} -> {safe_qmax} "
+                    f"(experimental SAXS max q = {qs[-1]})",
+                    flush=True,
+                )
+                params[key] = safe_qmax
+    except Exception as exc:  # noqa: BLE001 — never block the run on q-clamping
+        print(f"[wrapper] q-clamp skipped ({exc})", flush=True)
+
+
+def _count_coord_lines(path: Path) -> int:
+    """Number of non-blank lines (= CA residues) in a coordinates*.dat file."""
+    n = 0
+    with open(path) as fh:
+        for line in fh:
+            if line.strip():
+                n += 1
+    return n
+
+
+def merge_mixture_structures(
+    *,
+    carbonara_root: Path,
+    run_root: Path,
+    scenario_dir: Path,
+    input_saxs: Path,
+    params: dict[str, Any],
+    extra_pdbs: list[Path],
+    log_file: Path,
+) -> None:
+    """Multi-structure mixture: replace the replicated coordinates{i}/fingerPrint{i}/
+    varyingSectionSecondary{i} (i = 2..n) — which the primary setup filled with
+    copies of structure 1 — with the Carbonara files generated from each
+    additional uploaded structure. This is the "merge" the Carbonara author does
+    by hand for a mixture of genuinely different conformations.
+
+    All structures must share topology (same residue count), or the C++ fitter
+    crashes; we generate each structure's files and compare residue counts first.
+    """
+    setup_script = carbonara_root / "setup_carbonara.py"
+    ref_n = _count_coord_lines(scenario_dir / "coordinates1.dat")
+    stems = ("coordinates", "fingerPrint", "varyingSectionSecondary")
+
+    for offset, extra in enumerate(extra_pdbs):
+        idx = offset + 2  # structures 2..n
+        # Run setup IN run_root (it has the build/bin layout the script needs) under
+        # a temp name; setup writes to run_root/carbonara_runs/<tmp_name>/.
+        tmp_name = f"_mixstruct{idx}"
+        src_dir = run_root / "carbonara_runs" / tmp_name
+        if src_dir.exists():
+            shutil.rmtree(src_dir)
+        cmd = [
+            sys.executable,
+            str(setup_script),
+            "--pdb", str(extra),
+            "--saxs", str(input_saxs),
+            "--name", tmp_name,
+            "--dir", str(run_root),
+            "--fit_n_times", "1",
+            "--min_q", str(params.get("min_q", 0.01)),
+            "--max_q", str(params.get("max_q", 0.2)),
+            "--max_q_start", str(params.get("max_q_start", 0.2)),
+            "--max_fit_steps", str(int(params.get("max_fit_steps", 1000))),
+            "--mixture_n", "1",
+        ]
+        if params.get("rotation", False):
+            cmd.append("--rotation")
+        rc = run_logged(cmd, cwd=run_root, log_file=log_file)
+        if rc != 0:
+            raise WrapperError(
+                f"Setup failed for mixture structure {idx} ({extra.name})"
+            )
+
+        if not (src_dir / "coordinates1.dat").exists():
+            raise WrapperError(
+                f"Setup produced no coordinates for mixture structure {idx} ({extra.name})"
+            )
+        n_i = _count_coord_lines(src_dir / "coordinates1.dat")
+        if n_i != ref_n:
+            raise WrapperError(
+                f"Mixture structure {idx} ({extra.name}) has {n_i} residues but "
+                f"structure 1 has {ref_n}; mixture structures must share the same "
+                f"topology (same residue/chain count)."
+            )
+        for stem in stems:
+            s = src_dir / f"{stem}1.dat"
+            if s.exists():
+                shutil.copy2(s, scenario_dir / f"{stem}{idx}.dat")
+
+        # Clean up the temp setup artifacts.
+        shutil.rmtree(src_dir, ignore_errors=True)
+        tmp_runme = run_root / f"RunMe_{tmp_name}.sh"
+        if tmp_runme.exists():
+            tmp_runme.unlink()
+        print(
+            f"[wrapper] merged mixture structure {idx} from {extra.name} "
+            f"({n_i} residues)",
+            flush=True,
+        )
+
+
 def build_setup_command(
     python_exe: str,
     setup_script: Path,
@@ -786,7 +958,31 @@ def main() -> int:
     shutil.copy2(input_pdb_original, input_pdb)
     shutil.copy2(input_saxs_original, input_saxs)
 
+    # Clean the structure (altLoc/duplicate atoms, non-AA HETATM, multi-model)
+    # before setup. Numbering is preserved so user flex/constraint residue
+    # numbers stay valid. No-op fallback if the sanitiser isn't available.
+    input_pdb = sanitize_input_pdb(input_pdb, carbonara_root)
+
     params = job.get("parameters", {})
+    # Guard against a fitter segfault when max_q exceeds the experimental SAXS
+    # q-range (clamps max_q / max_q_start to just inside the data).
+    clamp_q_to_saxs_range(params, input_saxs)
+
+    # Multi-structure mixture: additional uploaded structures (species 2..n).
+    # Copy + sanitise each, and set mixture_n to the number of structures so the
+    # primary setup lays down coordinates1..n / a mixtureFile / noStructures=n;
+    # the actual different structures are merged in after setup.
+    extra_pdbs: list[Path] = []
+    for i, spec in enumerate(job.get("mixture_pdbs") or []):
+        ep_orig = require_file(
+            resolve_path(spec, job_json_dir), f"mixture structure PDB {i + 2}"
+        )
+        ep = input_dir / f"mixstruct{i + 2}_{ep_orig.name}"
+        shutil.copy2(ep_orig, ep)
+        extra_pdbs.append(sanitize_input_pdb(ep, carbonara_root))
+    if extra_pdbs:
+        params["mixture_n"] = 1 + len(extra_pdbs)
+
     carbonara_run_dir = run_root / "carbonara_runs" / job_name
     fitdata_dir = carbonara_run_dir / "fitdata"
     run_script = run_root / f"RunMe_{job_name}.sh"
@@ -838,6 +1034,39 @@ def main() -> int:
     expose_probability_interpolation_files(carbonara_root, carbonara_run_dir)
 
     mixture_n = int(params.get("mixture_n", 1))
+
+    # Multi-structure mixture: swap the replicated structure-1 files for the real
+    # additional structures (coordinates2/fingerPrint2/... = structure 2, etc.).
+    if extra_pdbs:
+        print(
+            f"\n[merge] Merging {len(extra_pdbs)} additional mixture structure(s)\n"
+        )
+        update_summary(summary_path, summary, status="merging_mixture_structures")
+        try:
+            merge_mixture_structures(
+                carbonara_root=carbonara_root,
+                run_root=run_root,
+                scenario_dir=carbonara_run_dir,
+                input_saxs=input_saxs,
+                params=params,
+                extra_pdbs=extra_pdbs,
+                log_file=log_file,
+            )
+        except Exception as exc:
+            print(f"\nMixture merge step failed: {exc}", file=sys.stderr)
+            update_summary(
+                summary_path, summary, status="mixture_merge_failed",
+                mixture_merge_error=str(exc),
+            )
+            collect_outputs(
+                carbonara_run_dir=carbonara_run_dir,
+                run_script=run_script if run_script.exists() else None,
+                log_file=log_file,
+                summary_path=summary_path,
+                outdir=outdir,
+                summary=summary,
+            )
+            return 1
 
     # Computed step numbering: build the ordered list of optional apply phases
     # that will actually run (flexibility -> merges -> constraints), then number

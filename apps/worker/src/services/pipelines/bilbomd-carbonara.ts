@@ -16,7 +16,10 @@ import {
   buildBackmapContainerArgs,
   parseFoxsResultsSummary,
   selectBestAaModel,
-  buildResultsContainerArgs
+  buildResultsContainerArgs,
+  buildMultiFoxsContainerArgs,
+  parseMultiFoxsEnsembles,
+  parseMultiFoxsFit
 } from '../functions/carbonara-functions.js'
 
 /**
@@ -98,6 +101,7 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         max_q_start: foundJob.max_q_start,
         max_fit_steps: foundJob.max_fit_steps,
         mixture_n: foundJob.mixture_n,
+        max_mixture_combos: foundJob.max_mixture_combos,
         rotation: foundJob.rotation ?? false
       },
       alphaFoldFlex: foundJob.alphafold_flex,
@@ -109,7 +113,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         | { chain: number; ranges: number[][] }[]
         | undefined,
       multimer: foundJob.multimer,
-      chainMerges: foundJob.chain_merges as number[][] | undefined
+      chainMerges: foundJob.chain_merges as number[][] | undefined,
+      mixturePdbFileNames: foundJob.mixture_pdb_files as string[] | undefined
     })
     const jobJsonPath = path.join(workDir, 'job.json')
     await fs.writeJson(jobJsonPath, jobJson, { spaces: 2 })
@@ -128,7 +133,9 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       hostJobDir: workDir,
       runnerPath: config.carbonara.runnerPath,
       pythonBin: config.carbonara.pythonBin,
-      runnerMountHost: config.carbonara.runnerMount || undefined
+      runnerMountHost: config.carbonara.runnerMount || undefined,
+      dataToolsMountHost: config.carbonara.dataToolsMount || undefined,
+      dataToolsPath: config.carbonara.dataToolsPath
     })
     logger.info(
       `Carbonara container: ${config.carbonara.containerBin} ${args.join(' ')}`
@@ -343,6 +350,178 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
           summaryData,
           { spaces: 2 }
         )
+
+        // Mixture all-atom weighting via BilboMD's IMP multi_foxs (rigorous;
+        // the results step uses it in place of the rough ported weight-fit when
+        // present). Non-fatal — any failure leaves the fallback in place.
+        const nSpecies = foundJob.mixture_n ?? 1
+        if (nSpecies > 1 && allEntries.length > 0) {
+          try {
+            // Find a complete per-run species set (sub 0..N-1) among the
+            // backmapped models.
+            const byRun = new Map<number, Map<number, string>>()
+            for (const e of allEntries) {
+              const m = e.name.match(/mol(\d+)_sub_(\d+)/)
+              if (!m) continue
+              const run = Number(m[1])
+              const sub = Number(m[2])
+              if (!byRun.has(run)) byRun.set(run, new Map())
+              byRun.get(run)?.set(sub, e.name)
+            }
+            const wanted = [...Array(nSpecies).keys()]
+            let chosen: string[] | null = null
+            for (const run of [...byRun.keys()].sort((a, b) => a - b)) {
+              const subs = byRun.get(run) as Map<number, string>
+              if (wanted.every((s) => subs.has(s))) {
+                chosen = wanted.map((s) => subs.get(s) as string)
+                break
+              }
+            }
+            if (chosen) {
+              const speciesContainer = chosen.map(
+                (name) => `/job/results/all_atom/${name}/${name}_AA.pdb`
+              )
+              const mfArgs = buildMultiFoxsContainerArgs({
+                image: config.carbonara.multiFoxsImage,
+                multiFoxsBin: config.carbonara.multiFoxsBin,
+                hostJobDir: workDir,
+                outDirContainer: '/job/results/multifoxs_mixture',
+                saxsContainer: `/job/${foundJob.data_file}`,
+                speciesPdbsContainer: speciesContainer,
+                numStates: nSpecies
+              })
+              const mfLog = path.join(workDir, 'logs', 'carbonara.multifoxs.log')
+              await fs.ensureFile(mfLog)
+              const mfStream = fs.createWriteStream(mfLog, { flags: 'a' })
+              try {
+                await runCarbonaraContainer({
+                  containerBin: config.carbonara.containerBin,
+                  args: mfArgs,
+                  cwd: workDir,
+                  timeoutMs: config.carbonara.backmapTimeoutMs,
+                  onStdoutLine: (l) => mfStream.write(l + '\n'),
+                  onStderrLine: (l) => mfStream.write(l + '\n')
+                })
+              } finally {
+                await new Promise<void>((r) => mfStream.end(r))
+              }
+
+              const mfDir = path.join(workDir, 'results', 'multifoxs_mixture')
+
+              type MfState = {
+                run: number
+                chi2: number
+                scale: number
+                weights: number[]
+                species: {
+                  id: string
+                  sub: number
+                  aa_pdb: string
+                  weight: number
+                }[]
+                fit: {
+                  chi2: number
+                  foxs: {
+                    q: number
+                    exp: number
+                    model: number
+                    error: number
+                  }[]
+                }
+              }
+
+              // Best ensemble at a given size (number of states) from
+              // multi_foxs's ensembles_size_<k>.txt + its .fit curve. Collecting
+              // every size shows how χ² improves as species are added.
+              const buildState = async (
+                size: number
+              ): Promise<MfState | null> => {
+                const ensFile = path.join(mfDir, `ensembles_size_${size}.txt`)
+                if (!(await fs.pathExists(ensFile))) return null
+                const ens = parseMultiFoxsEnsembles(
+                  await fs.readFile(ensFile, 'utf8')
+                )
+                if (!ens) return null
+                const species = ens.members
+                  .map((mem) => {
+                    // multi_foxs echoes back the PDB path we passed, so take the
+                    // basename to recover the model id (mol{i}_sub_{j}_end).
+                    const base = (mem.pdb.split('/').pop() ?? mem.pdb).replace(
+                      /_AA\.pdb$/,
+                      ''
+                    )
+                    const sm = base.match(/_sub_(\d+)/)
+                    return {
+                      id: base,
+                      sub: sm ? Number(sm[1]) : 0,
+                      aa_pdb: `all_atom/${base}/${base}_AA.pdb`,
+                      weight: mem.weight
+                    }
+                  })
+                  .sort((a, b) => a.sub - b.sub)
+                let fitRows: MfState['fit']['foxs'] = []
+                const fitFile = path.join(
+                  mfDir,
+                  `multi_state_model_${size}_1_1.fit`
+                )
+                if (await fs.pathExists(fitFile)) {
+                  fitRows = parseMultiFoxsFit(await fs.readFile(fitFile, 'utf8'))
+                }
+                return {
+                  run: size,
+                  chi2: ens.chi2,
+                  scale: 1,
+                  weights: species.map((s) => s.weight),
+                  species,
+                  fit: { chi2: ens.chi2, foxs: fitRows }
+                }
+              }
+
+              const states: MfState[] = []
+              for (let size = 1; size <= nSpecies; size++) {
+                const st = await buildState(size)
+                if (st) states.push(st)
+              }
+
+              if (states.length > 0) {
+                // Headline = the full N-species ensemble; the smaller-size
+                // ensembles populate the "ensembles by size" table.
+                const best =
+                  states.find((s) => s.species.length === nSpecies) ??
+                  states.reduce((a, b) => (b.chi2 < a.chi2 ? b : a))
+                await fs.writeJson(
+                  path.join(workDir, 'results', 'mixture_multifoxs.json'),
+                  {
+                    method: 'multi_foxs',
+                    chi2: best.chi2,
+                    n_species: nSpecies,
+                    species: best.species,
+                    fit: best.fit,
+                    n_states: states.length,
+                    states
+                  },
+                  { spaces: 2 }
+                )
+                await MQjob.log(
+                  `carbonara mixture multi_foxs chi2=${best.chi2.toFixed(4)} (${states.length} ensemble sizes)`
+                )
+                logger.info(
+                  `Carbonara mixture multi_foxs chi2=${best.chi2} for ${foundJob.uuid}`
+                )
+              }
+            } else {
+              logger.warn(
+                `Carbonara mixture: no complete species set for multi_foxs (${foundJob.uuid})`
+              )
+            }
+          } catch (e) {
+            logger.warn(
+              `Carbonara mixture multi_foxs failed (non-fatal): ${
+                e instanceof Error ? e.message : String(e)
+              }`
+            )
+          }
+        }
 
         if (doFoxs) {
           await MQjob.log('end carbonara-scoring')

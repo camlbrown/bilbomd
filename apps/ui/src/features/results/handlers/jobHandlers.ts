@@ -219,19 +219,56 @@ export const createCarbonaraJobHandler = (): JobHandler => ({
       ? j.flex_mode.charAt(0).toUpperCase() + j.flex_mode.slice(1)
       : 'Auto'
 
-    const props: MongoDBProperty[] = [
-      { label: 'Structure file', value: j.pdb_file },
+    // A mixture/ensemble run has mixture_n > 1. It is either a multi-structure
+    // mixture (different uploaded structures, listed in mixture_pdb_files) or a
+    // same-structure mixture (mixture_n copies of the one uploaded structure).
+    const extras = j.mixture_pdb_files ?? []
+    const isMultiStructure = extras.length > 0
+    const isMixture = (j.mixture_n ?? 1) > 1 || isMultiStructure
+    const nSpecies = isMultiStructure ? 1 + extras.length : (j.mixture_n ?? 1)
+
+    const props: MongoDBProperty[] = []
+
+    if (isMixture) {
+      props.push({
+        label: 'Workflow type',
+        value: isMultiStructure
+          ? 'Mixture — multi-structure ensemble'
+          : 'Mixture — same-structure ensemble'
+      })
+      if (isMultiStructure) {
+        props.push({ label: 'Structure 1', value: j.pdb_file })
+        extras.forEach((f, i) => {
+          props.push({ label: `Structure ${i + 2}`, value: f })
+        })
+      } else {
+        props.push({ label: 'Structure file', value: j.pdb_file })
+      }
+      props.push({ label: 'Ensemble species', value: nSpecies })
+      props.push({
+        label: 'Weight combinations sampled',
+        value: `Up to ${j.max_mixture_combos ?? 5 * nSpecies} per ensemble size (MultiFoXS optimises the species weights)`
+      })
+    } else {
+      props.push({ label: 'Structure file', value: j.pdb_file })
+    }
+
+    props.push(
       { label: 'Flexibility mode', value: flexMode },
       { label: 'q range', value: `${j.min_q}–${j.max_q} Å⁻¹` },
       { label: 'Number of fits', value: j.fit_n_times },
-      { label: 'Max fitting steps', value: j.max_fit_steps },
-      {
+      { label: 'Max fitting steps', value: j.max_fit_steps }
+    )
+    if (!isMixture) {
+      props.push({
         label: 'Oligomeric state',
         value: j.multimer ? 'Multimer' : 'Monomer'
-      }
-    ]
+      })
+    }
 
-    if (j.multimer) {
+    // Affine rotation applies to a multimer, and to a mixture of multimers
+    // (where multimer is false but rotation may be on).
+    if (j.multimer || (isMixture && j.rotation)) {
       props.push({
         label: 'Affine rotation',
         value: j.rotation ? 'Enabled' : 'Disabled'

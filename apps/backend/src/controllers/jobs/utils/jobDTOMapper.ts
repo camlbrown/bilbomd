@@ -253,6 +253,9 @@ export const mapJobMongoToDTO = (job: IJob) => {
       return {
         ...base,
         pdb_file: carbonaraJob.pdb_file,
+        fasta_file: carbonaraJob.fasta_file,
+        mixture_pdb_files: carbonaraJob.mixture_pdb_files,
+        max_mixture_combos: carbonaraJob.max_mixture_combos,
         fit_n_times: carbonaraJob.fit_n_times,
         min_q: carbonaraJob.min_q,
         max_q: carbonaraJob.max_q,

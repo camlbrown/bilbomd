@@ -146,6 +146,13 @@ export interface BilboMDScoperDTO extends BaseJobDTO {
 
 export interface BilboMDCarbonaraDTO extends BaseJobDTO {
   pdb_file: string
+  // Optional full experimental sequence (FASTA) used to flag residues missing
+  // from the uploaded structure. Advisory only in phase 1.
+  fasta_file?: string
+  // Mixture/ensemble: additional structure files (multi-structure mixture) and
+  // the number of weight combinations MultiFoXS samples per ensemble size.
+  mixture_pdb_files?: string[]
+  max_mixture_combos?: number
   fit_n_times: number
   min_q: number
   max_q: number

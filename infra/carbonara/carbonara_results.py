@@ -155,6 +155,119 @@ def foxs_curve(model_pdb: Path, saxs: Path, foxs_cmd: str, max_q: float | None,
 
 
 # ---------------------------------------------------------------------------
+# Mixture (pseudo-MultiFoXS) assessment
+# ---------------------------------------------------------------------------
+
+def fit_simplex_weights(component_profiles, I_exp, sigma):
+    """Fit non-negative weights summing to one plus a single global scale,
+    minimising mean(((scale * mix - I_exp) / sigma)^2).
+
+    Ported verbatim (algorithm) from Carbonara's
+    watch_and_backmap._fit_simplex_weights. Returns (weights, scale, chi2).
+    """
+    import numpy as np
+    from scipy.optimize import minimize
+
+    comps = np.asarray(component_profiles, dtype=float)
+    y = np.asarray(I_exp, dtype=float)
+    sig = np.asarray(sigma, dtype=float)
+    sig = np.where(sig <= 0, 1.0, sig)
+    n = comps.shape[0]
+
+    def best_scale(mix):
+        wt = 1.0 / (sig * sig)
+        denom = np.sum(wt * mix * mix)
+        return float(np.sum(wt * y * mix) / denom) if denom > 0 else 1.0
+
+    def objective(w):
+        mix = np.dot(w, comps)
+        c = best_scale(mix)
+        r = (c * mix - y) / sig
+        return float(np.mean(r * r))
+
+    w0 = np.ones(n, dtype=float) / float(n)
+    cons = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0},)
+    bounds = [(0.0, 1.0)] * n
+    res = minimize(objective, w0, method='SLSQP', bounds=bounds, constraints=cons)
+    w = np.clip(np.asarray(res.x, dtype=float), 0.0, 1.0)
+    s = float(np.sum(w))
+    w = w / s if s > 0 else w0
+    mix = np.dot(w, comps)
+    scale = best_scale(mix)
+    chi2 = objective(w)
+    return w, scale, chi2
+
+
+def mixture_assessment(preds, results_dir, saxs, foxs_cmd, max_q, max_states):
+    """Pseudo-MultiFoXS for mixture runs.
+
+    For each fit run that produced multiple species (sub_0..sub_{n-1}), run FoXS
+    on each all-atom species and fit the best non-negative weights (summing to
+    one) that reproduce the experimental SAXS. Returns
+    {n_species, n_states, best, states} or None when not a mixture / unassessable.
+    """
+    import numpy as np
+
+    species_count = max((p.get('sub', 0) for p in preds), default=0) + 1
+    if species_count < 2:
+        return None
+
+    by_run: dict[int, list] = {}
+    for p in preds:
+        by_run.setdefault(p.get('run', 0), []).append(p)
+
+    states = []
+    for run in sorted(by_run):
+        members = sorted(by_run[run], key=lambda p: p.get('sub', 0))
+        if len(members) < species_count:
+            continue  # incomplete species set for this run
+        curves = []
+        exp = err = qs = None
+        ok = True
+        for m in members:
+            c = foxs_curve(results_dir / m['aa_pdb'], Path(saxs), foxs_cmd, max_q,
+                           results_dir / '_foxs_mix_tmp')
+            if not c or not c.get('foxs'):
+                ok = False
+                break
+            rows = c['foxs']
+            curves.append([r['model'] for r in rows])
+            if exp is None:
+                exp = [r['exp'] for r in rows]
+                err = [r['error'] for r in rows]
+                qs = [r['q'] for r in rows]
+        if not ok or exp is None:
+            continue
+        try:
+            w, scale, chi2 = fit_simplex_weights(curves, exp, err)
+        except Exception:  # noqa: BLE001
+            continue
+        mix = (scale * np.dot(w, np.asarray(curves, dtype=float))).tolist()
+        fit_rows = [{'q': qs[i], 'exp': exp[i], 'model': mix[i], 'error': err[i]}
+                    for i in range(len(qs))]
+        states.append({
+            'run': run,
+            'chi2': float(chi2),
+            'scale': float(scale),
+            'weights': [float(x) for x in w],
+            'species': [
+                {'id': m['id'], 'sub': m.get('sub', 0), 'weight': float(w[i]),
+                 'aa_pdb': m['aa_pdb'], 'chi2': m.get('chi2')}
+                for i, m in enumerate(members)
+            ],
+            'fit': {'chi2': float(chi2), 'foxs': fit_rows},
+        })
+        if len(states) >= max_states:
+            break
+
+    if not states:
+        return None
+    best = min(states, key=lambda s: s['chi2'])
+    return {'n_species': species_count, 'n_states': len(states),
+            'best': best, 'states': states}
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -183,6 +296,7 @@ def main() -> None:
         'convergence': [],
         'histograms': {},
         'best': None,
+        'mixture': None,
         'warnings': warnings
     }
 
@@ -288,6 +402,67 @@ def main() -> None:
                 else:
                     warnings.append('Best-model FoXS curve unavailable.')
 
+        # --- mixture weighting ---
+        # Prefer the rigorous IMP multi_foxs result the worker wrote (if any),
+        # which slots into the same shape the UI renders. Fall back to the rough
+        # in-process weight fit only when multi_foxs is unavailable.
+        mf_path = results_dir / 'mixture_multifoxs.json'
+        if mf_path.exists():
+            try:
+                mf = json.loads(mf_path.read_text())
+                n_species = int(mf.get('n_species', len(mf.get('species', []))))
+
+                def _state_from(st: dict, run_default: int = 0) -> dict:
+                    sp = st.get('species', [])
+                    return {
+                        'run': int(st.get('run', run_default)),
+                        'chi2': float(st.get('chi2', 0.0)),
+                        'scale': float(st.get('scale', 1.0)),
+                        'weights': [float(s.get('weight', 0.0)) for s in sp],
+                        'species': [
+                            {'id': s.get('id'), 'sub': int(s.get('sub', 0)),
+                             'weight': float(s.get('weight', 0.0)),
+                             'aa_pdb': s.get('aa_pdb'), 'chi2': None}
+                            for s in sp
+                        ],
+                        'fit': st.get('fit') or {
+                            'chi2': float(st.get('chi2', 0.0)), 'foxs': []},
+                    }
+
+                mf_states = mf.get('states')
+                if mf_states:
+                    # The worker emitted the best ensemble per size (1..N).
+                    states = [_state_from(st) for st in mf_states]
+                else:
+                    # Older single-ensemble JSON: synthesise one state from the
+                    # top-level species/chi2/fit.
+                    states = [_state_from(mf)]
+                # Headline = the full N-species ensemble, else the lowest χ².
+                best = next(
+                    (s for s in states if len(s['species']) == n_species),
+                    min(states, key=lambda s: s['chi2'])) if states else None
+                if best is not None:
+                    payload['mixture'] = {
+                        'method': 'multi_foxs',
+                        'n_species': n_species,
+                        'n_states': len(states),
+                        'best': best,
+                        'states': states,
+                    }
+            except Exception as e:  # noqa: BLE001
+                warnings.append(f'multi_foxs mixture parse failed: {e}')
+
+        if payload['mixture'] is None and args.saxs and Path(args.saxs).exists():
+            try:
+                mix = mixture_assessment(
+                    preds, results_dir, args.saxs, args.foxs_cmd, args.max_q,
+                    max_states=args.max_pairwise)
+                if mix:
+                    mix['method'] = 'estimated'
+                    payload['mixture'] = mix
+            except Exception as e:  # noqa: BLE001
+                warnings.append(f'Mixture assessment failed: {e}')
+
         payload['predictions'] = preds
         payload['n_predictions'] = len(preds)
 
@@ -296,10 +471,13 @@ def main() -> None:
         payload['message'] = str(exc)
 
     out_path.write_text(json.dumps(payload))
+    mix = payload.get('mixture')
+    mix_txt = (f"{mix['n_species']}-species mixture, {mix['n_states']} states"
+               if mix else 'no mixture')
     print(f'wrote {out_path} (status={payload["status"]}, '
           f'{len(payload["predictions"])} predictions, '
           f'{len(payload["convergence"])} convergence runs, '
-          f'{len(warnings)} warnings)')
+          f'{mix_txt}, {len(warnings)} warnings)')
 
 
 if __name__ == '__main__':

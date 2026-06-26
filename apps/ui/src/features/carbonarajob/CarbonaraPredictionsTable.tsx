@@ -32,12 +32,22 @@ interface CarbonaraPredictionsTableProps {
   jobId: string
   predictions: CarbonaraAnalysisPrediction[]
   bestId?: string
+  // When set (mixture jobs), adds a "Derived from" column mapping each model's
+  // species index to the structure it came from.
+  structureNameForSub?: (sub: number) => string | undefined
+}
+
+// Recover the species index from a model id like "mol1_sub_0_end".
+const subOfModel = (id: string): number | null => {
+  const m = id.match(/_sub_(\d+)/)
+  return m ? Number(m[1]) : null
 }
 
 const CarbonaraPredictionsTable = ({
   jobId,
   predictions,
-  bestId
+  bestId,
+  structureNameForSub
 }: CarbonaraPredictionsTableProps) => {
   const [sortKey, setSortKey] = useState<SortKey>('chi2')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -150,6 +160,7 @@ const CarbonaraPredictionsTable = ({
           <TableHead>
             <TableRow>
               <TableCell>Model</TableCell>
+              {structureNameForSub && <TableCell>Derived from</TableCell>}
               {columns.map((col) => (
                 <TableCell
                   key={col.key}
@@ -201,6 +212,21 @@ const CarbonaraPredictionsTable = ({
                       </Typography>
                     </Box>
                   </TableCell>
+                  {structureNameForSub && (
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                      >
+                        {(() => {
+                          const sub = subOfModel(pred.id)
+                          const name =
+                            sub != null ? structureNameForSub(sub) : undefined
+                          return name ?? (sub != null ? `Species ${sub + 1}` : '—')
+                        })()}
+                      </Typography>
+                    </TableCell>
+                  )}
                   <TableCell>{pred.chi2.toFixed(4)}</TableCell>
                   <TableCell>{pred.rg.toFixed(2)}</TableCell>
                   <TableCell>{pred.rmsd_to_original.toFixed(2)}</TableCell>

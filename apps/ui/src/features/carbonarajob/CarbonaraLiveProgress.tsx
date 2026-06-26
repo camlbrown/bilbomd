@@ -20,6 +20,12 @@ const CarbonaraLiveProgress = ({ jobId }: CarbonaraLiveProgressProps) => {
   const convergence = data?.convergence ?? []
   const hasData = convergence.length > 0
 
+  // The chart legend wraps to multiple rows when many fit replicas run (e.g.
+  // 20), overflowing below the plot. Push the caption down enough to clear the
+  // wrapped rows so they don't overlap. ~5 labels per row, ~20 px per extra row.
+  const legendRows = Math.ceil(convergence.length / 5)
+  const captionMt = `${8 + Math.max(0, legendRows - 1) * 20}px`
+
   // Latest fit step and best χ² so far across all runs, for an at-a-glance line.
   const allPoints = convergence.flatMap((run) => run.points)
   const latestStep = allPoints.reduce((m, p) => (p.step > m ? p.step : m), 0)
@@ -84,7 +90,7 @@ const CarbonaraLiveProgress = ({ jobId }: CarbonaraLiveProgressProps) => {
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ display: 'block', mt: 0.5 }}
+            sx={{ display: 'block', mt: captionMt }}
           >
             Updates every 10 s. Each line is one fit replica; this is the
             Carbonara fitting χ² (coarse-grained). The all-atom FoXS χ² is

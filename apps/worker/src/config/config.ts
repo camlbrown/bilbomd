@@ -155,6 +155,27 @@ export const config = {
     // Optional host path to bind-mount over the in-container wrapper for local
     // dev iteration without an image rebuild. Empty string = no mount (prod).
     runnerMount: getEnvVarWithDefault('CARBONARA_RUNNER_MOUNT', ''),
+    // In-container path to the Carbonara data-tools module (baked into image).
+    dataToolsPath: getEnvVarWithDefault(
+      'CARBONARA_DATATOOLS_PATH',
+      '/opt/carbonara/CarbonaraDataTools.py'
+    ),
+    // Optional host path to bind-mount an updated CarbonaraDataTools.py over the
+    // baked copy for local dev (mount-to-validate before an image rebuild), like
+    // runnerMount. Empty string = no mount (use the baked version).
+    dataToolsMount: getEnvVarWithDefault('CARBONARA_DATATOOLS_MOUNT', ''),
+    // Mixture all-atom weighting via BilboMD's IMP multi_foxs. It is not in the
+    // Carbonara image, so the mixture step runs in the BilboMD worker image
+    // (which ships /usr/bin/multi_foxs). Falls back to the ported weight-fit in
+    // carbonara_results.py if the image/binary is unavailable.
+    multiFoxsImage: getEnvVarWithDefault(
+      'CARBONARA_MULTIFOXS_IMAGE',
+      'ghcr.io/bl1231/bilbomd-worker:2.10.0'
+    ),
+    multiFoxsBin: getEnvVarWithDefault(
+      'CARBONARA_MULTIFOXS_BIN',
+      '/usr/bin/multi_foxs'
+    ),
     // B5: initial scattering check helper settings.
     // In-container path to carbonara_initfoxs.py (baked into the image).
     initFoxsPath: getEnvVarWithDefault(

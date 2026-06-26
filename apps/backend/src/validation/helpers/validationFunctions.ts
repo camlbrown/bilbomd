@@ -111,7 +111,10 @@ const noSpaces = (file: File): Promise<boolean> => {
 
 const isSaxsData = async (
   file: Express.Multer.File,
-  minValidLines = 100
+  minValidLines = 100,
+  // Lowest acceptable q (Å⁻¹). Default 0.005 for the standard BilboMD
+  // workflows; Carbonara relaxes this so it can fit slightly lower-q data.
+  minQ = 0.005
 ): Promise<{ valid: boolean; message?: string }> => {
   const sciNotation = /-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?/g
 
@@ -149,7 +152,7 @@ const isSaxsData = async (
         continue
       }
 
-      if (q < 0.005 || q > 1.0) {
+      if (q < minQ || q > 1.0) {
         logger.info(`Line ${lineNum}: Rejected due to q out of range → q=${q}`)
         continue
       }

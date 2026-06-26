@@ -89,6 +89,41 @@ export const saxsCheck = () =>
     }
   )
 
+// Carbonara variant: same SAXS check but with a relaxed lower-q bound, since
+// Carbonara can fit data starting slightly below the standard 0.005 Å⁻¹ floor.
+export const saxsCheckCarbonara = () =>
+  mixed().test(
+    'saxs-data-check',
+    'File does not appear to be SAXS data',
+    async function (value) {
+      const file = value as Express.Multer.File
+      logger.info(
+        `saxsCheckCarbonara(): file = ${file?.originalname}, path = ${file?.path}`
+      )
+
+      if (!file?.path) {
+        return this.createError({
+          message: 'Missing SAXS file path for validation.'
+        })
+      }
+
+      try {
+        const result = await isSaxsData(file, 100, 0.001)
+
+        if (result.valid) return true
+
+        return this.createError({
+          message: result.message ?? 'SAXS data invalid.'
+        })
+      } catch (err) {
+        logger.error('Error in saxsCheckCarbonara():', err)
+        return this.createError({
+          message: 'Unexpected error during SAXS validation'
+        })
+      }
+    }
+  )
+
 export const psfCheck = () =>
   mixed().test('psf-data-check', 'File may not be a valid PSF file', async (file) => {
     const psfFile = file as Express.Multer.File | undefined

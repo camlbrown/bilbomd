@@ -449,7 +449,16 @@ const SingleJobPage = () => {
                   {job.mongo.jobType === 'carbonara' && id && (
                     <Grid size={{ xs: 12 }}>
                       <Suspense fallback={<CircularProgress />}>
-                        <CarbonaraResults jobId={id} />
+                        <CarbonaraResults
+                          jobId={id}
+                          pdbFile={
+                            (job.mongo as { pdb_file?: string }).pdb_file
+                          }
+                          mixturePdbFiles={
+                            (job.mongo as { mixture_pdb_files?: string[] })
+                              .mixture_pdb_files
+                          }
+                        />
                       </Suspense>
                     </Grid>
                   )}

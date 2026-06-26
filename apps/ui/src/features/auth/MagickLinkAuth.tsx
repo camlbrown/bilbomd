@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router'
 import { useDispatch } from 'react-redux'
 import { setCredentials } from 'slices/authSlice'
@@ -19,6 +19,12 @@ const MagickLinkAuth = () => {
   const navigate = useNavigate()
   const dispatch = useDispatch()
   const [login, { isLoading }] = useLoginMutation()
+  // The OTP is single-use (the backend nulls it on first success). React
+  // StrictMode runs effects twice in dev, which would fire login() twice and
+  // immediately "expire" the link on the second call. Track the OTP we've
+  // already attempted so it's only ever consumed once (a genuinely different
+  // OTP still re-authenticates).
+  const attemptedOtpRef = useRef<string | null>(null)
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout
@@ -28,6 +34,8 @@ const MagickLinkAuth = () => {
         setAuthErrorMsg('No OTP provided')
         return
       }
+      if (attemptedOtpRef.current === otp) return
+      attemptedOtpRef.current = otp
       try {
         const { accessToken } = await login({ otp }).unwrap()
         dispatch(setCredentials({ accessToken }))

@@ -162,7 +162,20 @@ export const getCarbonaraOriginalPdb = async (
       return
     }
 
-    const safeName = path.basename(job.pdb_file)
+    // Mixture species derive from a specific uploaded structure: sub 0 = the
+    // primary pdb_file, sub i = mixture_pdb_files[i-1]. An optional ?sub=N picks
+    // which original to serve; without it (or for a same-structure mixture with
+    // no extras) we serve the primary.
+    const rawSub = req.query['sub']
+    const subStr = Array.isArray(rawSub) ? rawSub[0] : rawSub
+    const sub = subStr != null ? Number(subStr) : 0
+    const extras = (job.mixture_pdb_files ?? []) as string[]
+    const chosenFile =
+      Number.isFinite(sub) && sub > 0 && extras.length >= sub
+        ? extras[sub - 1]
+        : job.pdb_file
+
+    const safeName = path.basename(chosenFile ?? job.pdb_file)
     const fullPath = path.join(uploadFolder, job.uuid, safeName)
 
     const exists = await fs.pathExists(fullPath)

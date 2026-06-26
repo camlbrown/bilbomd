@@ -202,7 +202,10 @@ const noSpaces = (file: File): Promise<boolean> => {
 //  Examples of matches include `123`, `-123.45`, `1.23e4`, `-1.23e-4`, etc.
 
 const isSaxsData = (
-  file: File
+  file: File,
+  // Lowest acceptable q (Å⁻¹). Default 0.005 for the standard BilboMD
+  // workflows; Carbonara relaxes this so it can fit slightly lower-q data.
+  minQ = 0.005
 ): Promise<{ valid: boolean; message?: string }> => {
   // console.log(`validate if ${file.name} isSaxsData`)
   const sciNotation = /-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?/g
@@ -222,10 +225,10 @@ const isSaxsData = (
         const numbers = line.match(sciNotation)
         if (numbers && numbers.length >= 3) {
           const qValue = parseFloat(numbers[0]!)
-          if (qValue < 0.005 || qValue > 0.04) {
+          if (qValue < minQ || qValue > 0.04) {
             resolve({
               valid: false,
-              message: `Q values should be in inverse Angstroms between 0.005 and 0.04. Found: ${qValue}`
+              message: `Q values should be in inverse Angstroms between ${minQ} and 0.04. Found: ${qValue}`
             })
             return
           }

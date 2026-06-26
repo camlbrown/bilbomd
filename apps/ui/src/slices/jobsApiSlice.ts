@@ -124,6 +124,38 @@ export interface CarbonaraLiveProgress {
   convergence: CarbonaraConvergenceRun[]
 }
 
+// Mixture (ensemble) pseudo-MultiFoXS result. One "state" per fit run; each
+// state weights its species to best fit the SAXS data.
+export interface CarbonaraMixtureSpecies {
+  id: string
+  sub: number
+  weight: number
+  aa_pdb: string
+  chi2: number | null
+}
+
+export interface CarbonaraMixtureState {
+  run: number
+  chi2: number
+  scale: number
+  weights: number[]
+  species: CarbonaraMixtureSpecies[]
+  fit: {
+    chi2: number
+    foxs: { q: number; exp: number; model: number; error: number }[]
+  }
+}
+
+export interface CarbonaraMixture {
+  n_species: number
+  n_states: number
+  best: CarbonaraMixtureState
+  states: CarbonaraMixtureState[]
+  // 'multi_foxs' = rigorous IMP MultiFoXS ensemble fit; 'estimated' = the
+  // in-process weight-fit fallback.
+  method?: 'multi_foxs' | 'estimated'
+}
+
 export interface CarbonaraAnalysis {
   status: 'done' | 'pending' | 'error'
   chi2_threshold: number
@@ -136,6 +168,7 @@ export interface CarbonaraAnalysis {
     chi2: number
     fit: CarbonaraBestFit
   }
+  mixture?: CarbonaraMixture | null
   warnings: string[]
 }
 
@@ -399,6 +432,18 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
         responseHandler: (response) => response.text()
       })
     }),
+    // Mixture: fetch the original uploaded structure a given species derived
+    // from (sub 0 = primary pdb_file, sub i = mixture_pdb_files[i-1]).
+    getCarbonaraOriginalPdbBySub: builder.query<
+      string,
+      { jobId: string; sub: number }
+    >({
+      query: ({ jobId, sub }) => ({
+        url: `/jobs/${jobId}/carbonara-original-pdb?sub=${sub}`,
+        method: 'GET',
+        responseHandler: (response) => response.text()
+      })
+    }),
     // Carbonara: live fitting convergence (chi² per step, per run) while running
     getCarbonaraLiveProgress: builder.query<CarbonaraLiveProgress, string>({
       query: (jobId) => ({
@@ -438,6 +483,7 @@ export const {
   useGetCarbonaraAnalysisQuery,
   useLazyGetCarbonaraAaPdbQuery,
   useLazyGetCarbonaraOriginalPdbQuery,
+  useLazyGetCarbonaraOriginalPdbBySubQuery,
   useGetCarbonaraLiveProgressQuery
 } = jobsApiSlice
 

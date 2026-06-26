@@ -73,6 +73,22 @@ export const saxsCheck = () =>
     }
   )
 
+// Carbonara variant: same SAXS check but with a relaxed lower-q bound, since
+// Carbonara can fit data starting slightly below the standard 0.005 Å⁻¹ floor.
+export const saxsCheckCarbonara = () =>
+  mixed().test(
+    'saxs-data-check',
+    'File does not appear to be SAXS data',
+    async function (file) {
+      if (file instanceof File) {
+        const result = await isSaxsData(file, 0.001)
+        if (result.valid) return true
+        return this.createError({ message: result.message })
+      }
+      return true // allow string fallback
+    }
+  )
+
 export const psfCheck = () =>
   mixed().test(
     'psf-data-check',

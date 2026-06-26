@@ -2,11 +2,10 @@ import { object, string, number, boolean, mixed } from 'yup'
 import {
   requiredFile,
   pdbOrCifExtTest,
-  pdbOrCifResidueCheck,
   fileSizeTest,
   fileNameLengthTest,
   noSpacesTest,
-  saxsCheck,
+  saxsCheckCarbonara,
   fileExtTest,
   jsonFileCheck
 } from './fieldTests/fieldTests'
@@ -23,14 +22,35 @@ export const bilbomdCarbonaraJobSchema = object().shape({
   // Note: no chain-ID check here (unlike other job types). Carbonara splits
   // chains by TER records, so a missing chain-ID column is fine — the viewer
   // auto-assigns chains from TER breaks for display.
+  // Note: no generic residue allow-list check here either. That check flags any
+  // HETATM (e.g. Ca²⁺ ions or waters in a calmodulin PDB) as "unsupported",
+  // which would silently keep the form invalid and leave Submit greyed out. The
+  // Carbonara worker sanitizes HETATM during setup, and the dedicated
+  // CarbonaraPdbCheckPanel surfaces real compatibility issues, so we don't block
+  // submission on it here.
   pdb_file: requiredFile('A PDB or CIF file is required')
-    .concat(pdbOrCifResidueCheck())
     .concat(pdbOrCifExtTest())
     .concat(fileSizeTest(10_000_000))
     .concat(noSpacesTest())
     .concat(fileNameLengthTest()),
+  // Optional full experimental sequence. Advisory only (drives the
+  // missing-residue check) — never blocks submission.
+  fasta_file: mixed()
+    .test('fasta-optional', 'FASTA file must be < 1 MB', (file) => {
+      if (!(file instanceof File)) return true
+      return file.size <= 1_000_000
+    })
+    .test(
+      'fasta-ext',
+      'FASTA file must have a .fasta, .fa or .txt extension',
+      (file) => {
+        if (!(file instanceof File)) return true
+        return /\.(fasta|fa|txt)$/i.test(file.name)
+      }
+    )
+    .optional(),
   dat_file: requiredFile('Experimental SAXS data is required')
-    .concat(saxsCheck())
+    .concat(saxsCheckCarbonara())
     .concat(fileExtTest('dat'))
     .concat(fileSizeTest(2_000_000))
     .concat(noSpacesTest())
@@ -63,6 +83,19 @@ export const bilbomdCarbonaraJobSchema = object().shape({
     .integer('Max fitting steps must be an integer')
     .min(1, 'At least 1 step is required')
     .required('Max fitting steps is required'),
+  // Mixture/ensemble controls (only meaningful when oligomeric state = mixture).
+  mixture_n: number()
+    .typeError('Number of species must be a number')
+    .integer('Number of species must be an integer')
+    .min(2, 'A mixture needs at least 2 species')
+    .max(4, 'No more than 4 species')
+    .optional(),
+  max_mixture_combos: number()
+    .typeError('Weight combinations must be a number')
+    .integer('Weight combinations must be an integer')
+    .min(1, 'At least 1 combination')
+    .max(50, 'No more than 50 combinations')
+    .optional(),
   alphafold_flex: boolean().optional(),
   pae_flex_threshold: number()
     .typeError('PAE flexibility threshold must be a number')

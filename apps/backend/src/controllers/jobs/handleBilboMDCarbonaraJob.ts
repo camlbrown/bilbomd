@@ -33,7 +33,8 @@ const CARBONARA_DEFAULTS = {
   max_q: 0.2,
   max_q_start: 0.2,
   max_fit_steps: 1000,
-  mixture_n: 1
+  mixture_n: 1,
+  max_mixture_combos: 30
 }
 
 const toNumber = (value: unknown, fallback: number): number => {
@@ -63,6 +64,7 @@ const handleBilboMDCarbonaraJob = async (
     let pdbFile = files?.['pdb_file']?.[0]
     let datFile = files?.['dat_file']?.[0]
     let paeFile = files?.['pae_file']?.[0]
+    const fastaFile = files?.['fasta_file']?.[0]
     const constraintsFileUpload = files?.['constraints_file']?.[0]
     if (!pdbFile && req.body.pdb_file) {
       pdbFile = {
@@ -181,6 +183,7 @@ const handleBilboMDCarbonaraJob = async (
       email: req.body.email,
       dat_file: datFile,
       pdb_file: pdbFile,
+      fasta_file: fastaFile,
       pae_file: paeFile,
       constraints_file: constraintsFileUpload,
       fit_n_times: req.body.fit_n_times,
@@ -189,6 +192,7 @@ const handleBilboMDCarbonaraJob = async (
       max_q_start: req.body.max_q_start,
       max_fit_steps: req.body.max_fit_steps,
       mixture_n: req.body.mixture_n,
+      max_mixture_combos: req.body.max_mixture_combos,
       rotation: req.body.rotation,
       all_atom: req.body.all_atom,
       do_foxs: req.body.do_foxs,
@@ -223,10 +227,20 @@ const handleBilboMDCarbonaraJob = async (
       })
     }
 
+    // Multi-structure mixture: additional uploaded structures (species 2..n).
+    const mixturePdbFiles = (files?.['mixture_pdb_files'] ?? []).map((f) =>
+      f.originalname.toLowerCase()
+    )
+
     const jobData = {
       title,
       uuid: UUID,
       pdb_file: pdbFile.originalname.toLowerCase(),
+      fasta_file: fastaFile
+        ? fastaFile.originalname.toLowerCase()
+        : undefined,
+      mixture_pdb_files:
+        mixturePdbFiles.length > 0 ? mixturePdbFiles : undefined,
       data_file: datFile.originalname.toLowerCase(),
       // manual mode: ignore PAE file even if uploaded
       pae_file:
@@ -245,6 +259,10 @@ const handleBilboMDCarbonaraJob = async (
         CARBONARA_DEFAULTS.max_fit_steps
       ),
       mixture_n: toNumber(req.body.mixture_n, CARBONARA_DEFAULTS.mixture_n),
+      max_mixture_combos: toNumber(
+        req.body.max_mixture_combos,
+        CARBONARA_DEFAULTS.max_mixture_combos
+      ),
       rotation: toBoolean(req.body.rotation),
       all_atom: toBoolean(req.body.all_atom),
       do_foxs: req.body.do_foxs !== undefined ? toBoolean(req.body.do_foxs) : true,
