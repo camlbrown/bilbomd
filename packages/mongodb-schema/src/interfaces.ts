@@ -1,6 +1,7 @@
 export * from './interfaces/jobInterface.js'
 export * from './interfaces/sansJobInterface.js'
 export * from './interfaces/carbonaraJobInterface.js'
+export * from './interfaces/automdSaxsJobInterface.js'
 export * from './interfaces/userInterface.js'
 export * from './interfaces/multijobInterface.js'
 export * from './interfaces/openmmInterface.js'

@@ -9,7 +9,8 @@ export const jobTypeDisplayNames: Record<IJob['__t'], string> = {
   BilboMdAlphaFold: 'BilboMD (AlphaFold)',
   BilboMdOpenFold: 'BilboMD (OpenFold3)',
   BilboMdSANS: 'BilboMD (SANS)',
-  BilboMdCarbonara: 'Carbonara'
+  BilboMdCarbonara: 'Carbonara',
+  BilboMdAutoMDSAXS: 'BilboMD (AutoMD-SAXS)'
 }
 
 // export { jobTypeDisplayNames }

@@ -19,6 +19,7 @@ export type JobType =
   | 'sans'
   | 'scoper'
   | 'carbonara'
+  | 'automd-saxs'
   | 'multi'
 
 export type MDEngine = 'CHARMM' | 'OpenMM'
@@ -180,6 +181,24 @@ export interface BilboMDMultiDTO extends BaseJobDTO {
   bilbomd_jobs?: []
 }
 
+// AutoMD-SAXS: explicit-solvent OpenMM refinement, executed by the external
+// `automd-saxs` CLI. Fields map onto the automd-saxs OpenMMConfig JSON.
+export interface BilboMDAutoMDSAXSDTO extends BaseJobDTO {
+  pdb_file: string
+  dat_file?: string
+  system?: string
+  force_field?: string
+  water_model?: string
+  simulation_time_ns: number
+  n_repeats: number
+  temperature_K?: number
+  ionic_concentration_M?: number
+  ph?: number
+  disulfide?: boolean
+  box_padding_nm?: number
+  seed?: number
+}
+
 export type BilboMDMongoJobDTO =
   | BilboMDPDBDTO
   | BilboMDCRDDTO
@@ -189,6 +208,7 @@ export type BilboMDMongoJobDTO =
   | BilboMDSANSDTO
   | BilboMDScoperDTO
   | BilboMDCarbonaraDTO
+  | BilboMDAutoMDSAXSDTO
   | BilboMDMultiDTO
 
 export interface BilboMDJobDTO {

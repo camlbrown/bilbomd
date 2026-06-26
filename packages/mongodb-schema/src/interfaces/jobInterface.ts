@@ -119,6 +119,7 @@ interface IJob extends Document {
     | 'BilboMdOpenFold'
     | 'BilboMdSANS'
     | 'BilboMdCarbonara'
+    | 'BilboMdAutoMDSAXS'
   title: string
   uuid: string
   access_mode: AccessModeEnum

@@ -12,6 +12,7 @@ import {
   IBilboMDOpenFoldJob,
   IBilboMDSANSJob,
   IBilboMDCarbonaraJob,
+  IBilboMDAutoMDSAXSJob,
   IAlphaFoldEntity,
   IOpenFoldEntity,
   IFeedbackData,
@@ -380,6 +381,24 @@ const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
   chain_merges: { type: Schema.Types.Mixed, required: false }
 })
 
+// AutoMD-SAXS: explicit-solvent OpenMM refinement run by the external
+// `automd-saxs` CLI. Mirrors the automd-saxs OpenMMConfig fields.
+const bilboMdAutoMDSAXSJobSchema = new Schema<IBilboMDAutoMDSAXSJob>({
+  pdb_file: { type: String, required: true },
+  dat_file: { type: String, required: false },
+  system: { type: String, default: 'Protein', required: false },
+  force_field: { type: String, default: 'amber14', required: false },
+  water_model: { type: String, default: 'tip3p', required: false },
+  simulation_time_ns: { type: Number, required: true, default: 100 },
+  n_repeats: { type: Number, required: true, default: 3 },
+  temperature_K: { type: Number, default: 300, required: false },
+  ionic_concentration_M: { type: Number, default: 0.15, required: false },
+  ph: { type: Number, default: 7.0, required: false },
+  disulfide: { type: Boolean, default: false, required: false },
+  box_padding_nm: { type: Number, required: false },
+  seed: { type: Number, required: false }
+})
+
 jobSchema.index({ uuid: 1 })
 jobSchema.index({ client_ip_hash: 1, access_mode: 1, status: 1 })
 
@@ -405,6 +424,10 @@ const BilboMdCarbonaraJob = Job.discriminator(
   'BilboMdCarbonara',
   bilboMdCarbonaraJobSchema
 )
+const BilboMdAutoMDSAXSJob = Job.discriminator(
+  'BilboMdAutoMDSAXS',
+  bilboMdAutoMDSAXSJobSchema
+)
 
 export {
   Job,
@@ -417,6 +440,7 @@ export {
   BilboMdOpenFoldJob,
   BilboMdSANSJob,
   BilboMdCarbonaraJob,
+  BilboMdAutoMDSAXSJob,
   nerscInfoSchema,
   mdConstraintsSchema,
   fixedBodySchema,
