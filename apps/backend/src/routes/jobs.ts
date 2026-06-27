@@ -9,6 +9,7 @@ import {
 } from '../controllers/jobs/index.js'
 import { createSANSJob } from '../controllers/jobs/sansJobController.js'
 import { createCarbonaraJob } from '../controllers/jobs/carbonaraJobController.js'
+import { createAutoMDSaxsJob } from '../controllers/jobs/automdSaxsJobController.js'
 import {
   createCarbonaraInitFoxs,
   getCarbonaraInitFoxs
@@ -87,6 +88,7 @@ router.route('/bilbomd-alphafold').post(createNewJob)
 router.route('/bilbomd-openfold').post(createNewJob)
 router.route('/bilbomd-sans').post(createSANSJob)
 router.route('/bilbomd-carbonara').post(createCarbonaraJob)
+router.route('/bilbomd-automd-saxs').post(createAutoMDSaxsJob)
 router.route('/bilbomd-multi').post(createNewMultiJob)
 
 export default router
