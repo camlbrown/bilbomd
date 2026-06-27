@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Host-side shim used as AUTOMD_SAXS_BIN when the BilboMD worker runs from source
+# on the host (which has no OpenMM). It runs the `automd-saxs` CLI inside the
+# AutoMD-SAXS runtime container, bind-mounting the data volume at the SAME
+# absolute path so the absolute paths the worker wrote into config.json (and the
+# --out dir) resolve identically inside the container.
+#
+# The worker calls:  automd-saxs-run run --config <path> --out <path>
+#
+# Env:
+#   AUTOMD_SAXS_IMAGE         runtime image (default localhost/bilbomd-automd-saxs:dev)
+#   AUTOMD_SAXS_DATA_VOL      host dir holding job dirs, mounted 1:1 (default $DATA_VOL)
+#   AUTOMD_SAXS_GPU           1 = pass the GPU to the container (default 1; set 0 for CPU)
+#   AUTOMD_SAXS_CONTAINER_BIN podman|docker (default podman)
+#
+# In production (worker runs inside a container that has automd-saxs installed),
+# set AUTOMD_SAXS_BIN=/opt/envs/openmm/bin/automd-saxs instead and skip this shim.
+set -euo pipefail
+
+IMAGE="${AUTOMD_SAXS_IMAGE:-localhost/bilbomd-automd-saxs:dev}"
+DATA_VOL="${AUTOMD_SAXS_DATA_VOL:-${DATA_VOL:?set DATA_VOL or AUTOMD_SAXS_DATA_VOL}}"
+CONTAINER_BIN="${AUTOMD_SAXS_CONTAINER_BIN:-podman}"
+
+GPU_ARGS=()
+if [ "${AUTOMD_SAXS_GPU:-1}" = "1" ]; then
+  GPU_ARGS=(--device nvidia.com/gpu=all --security-opt=label=disable)
+fi
+
+exec "$CONTAINER_BIN" run --rm \
+  "${GPU_ARGS[@]}" \
+  --tmpfs /tmp \
+  -v "$DATA_VOL:$DATA_VOL" \
+  "$IMAGE" \
+  /opt/envs/openmm/bin/automd-saxs "$@"
