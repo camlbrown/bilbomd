@@ -172,6 +172,22 @@ export interface CarbonaraAnalysis {
   warnings: string[]
 }
 
+// AutoMD-SAXS results manifest (results/manifest.json). Fields are optional so
+// the same type covers the { status: 'pending' } poll response.
+export interface AutoMDSAXSAnalysis {
+  status: string
+  pipeline?: string
+  inputs?: { pdb?: string | null; saxs?: string | null }
+  parameters?: Record<string, unknown>
+  outputs?: Record<string, string[]>
+  metrics?: {
+    bestChi2?: number | null
+    bestFrame?: number | null
+    rgMean?: number | null
+  }
+  notes?: string[]
+}
+
 const jobsAdapter = createEntityAdapter<BilboMDJobDTO>()
 
 const initialState = jobsAdapter.getInitialState()
@@ -420,6 +436,13 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
       }),
       providesTags: (_, __, id) => [{ type: 'Job', id }]
     }),
+    getAutoMDSAXSAnalysis: builder.query<AutoMDSAXSAnalysis, string>({
+      query: (jobId) => ({
+        url: `/jobs/${jobId}/automd-saxs-analysis`,
+        method: 'GET'
+      }),
+      providesTags: (_, __, id) => [{ type: 'Job', id }]
+    }),
     // Carbonara results: fetch a single AA PDB text for the 3D viewer
     getCarbonaraAaPdb: builder.query<
       string,
@@ -490,6 +513,7 @@ export const {
   useAddCarbonaraAutoFlexMutation,
   useLazyGetCarbonaraAutoFlexQuery,
   useGetCarbonaraAnalysisQuery,
+  useGetAutoMDSAXSAnalysisQuery,
   useLazyGetCarbonaraAaPdbQuery,
   useLazyGetCarbonaraOriginalPdbQuery,
   useLazyGetCarbonaraOriginalPdbBySubQuery,

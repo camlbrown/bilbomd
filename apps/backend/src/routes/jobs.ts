@@ -10,6 +10,7 @@ import {
 import { createSANSJob } from '../controllers/jobs/sansJobController.js'
 import { createCarbonaraJob } from '../controllers/jobs/carbonaraJobController.js'
 import { createAutoMDSaxsJob } from '../controllers/jobs/automdSaxsJobController.js'
+import { getAutoMDSAXSAnalysis } from '../controllers/jobs/automdSaxsAnalysisController.js'
 import {
   createCarbonaraInitFoxs,
   getCarbonaraInitFoxs
@@ -75,6 +76,8 @@ router.route('/:id/carbonara-analysis').get(getCarbonaraAnalysis)
 router.route('/:id/carbonara-aa-pdb').get(getCarbonaraAaPdb)
 router.route('/:id/carbonara-original-pdb').get(getCarbonaraOriginalPdb)
 router.route('/:id/carbonara-live-progress').get(getCarbonaraLiveProgress)
+// AutoMD-SAXS results: also before '/:id/:filename'.
+router.route('/:id/automd-saxs-analysis').get(getAutoMDSAXSAnalysis)
 router.route('/:id/logs').get(getLogForStep)
 router.route('/:id/check-files').get(checkFiles)
 router.route('/:id/movies').get(getMovies)

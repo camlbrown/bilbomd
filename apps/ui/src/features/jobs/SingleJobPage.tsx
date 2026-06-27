@@ -40,6 +40,9 @@ const FoXSAnalysis = lazy(() => import('./FoXSAnalysis'))
 const CarbonaraResults = lazy(
   () => import('features/carbonarajob/CarbonaraResults')
 )
+const AutoMDSAXSResults = lazy(
+  () => import('features/automdsaxsjob/AutoMDSAXSResults')
+)
 import { useGetConfigsQuery } from 'slices/configsApiSlice'
 import {
   useGetJobByIdQuery,
@@ -460,6 +463,13 @@ const SingleJobPage = () => {
                               .mixture_pdb_files
                           }
                         />
+                      </Suspense>
+                    </Grid>
+                  )}
+                  {job.mongo.jobType === 'automd-saxs' && id && (
+                    <Grid size={{ xs: 12 }}>
+                      <Suspense fallback={<CircularProgress />}>
+                        <AutoMDSAXSResults jobId={id} />
                       </Suspense>
                     </Grid>
                   )}
