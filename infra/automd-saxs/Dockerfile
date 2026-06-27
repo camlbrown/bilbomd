@@ -13,6 +13,11 @@
 ARG BASE_IMAGE=ghcr.io/bl1231/bilbomd-worker:2.10.0
 FROM ${BASE_IMAGE}
 
+# The worker image runs as a non-root user; switch to root so pip can write into
+# the OpenMM env's site-packages and bin. (Under rootless podman, container root
+# maps to the invoking host user, so bind-mounted job files stay host-owned.)
+USER root
+
 # AutoMD-SAXS source (the build context is the AutoMD-SAXS repo).
 COPY . /opt/automd-saxs
 
