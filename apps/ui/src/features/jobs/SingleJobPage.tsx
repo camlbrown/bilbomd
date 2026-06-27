@@ -64,6 +64,7 @@ const jobTypeToRoute: Record<string, string> = {
   openfold: 'openfold',
   sans: 'sans',
   carbonara: 'carbonara',
+  'automd-saxs': 'automd-saxs',
   multi: 'multi'
 }
 

@@ -1,16 +1,18 @@
 import { Job as BullMQJob } from 'bullmq'
-import { BilboMdAutoMDSAXSJob } from '@bilbomd/mongodb-schema'
+import { BilboMdAutoMDSAXSJob, StepStatus } from '@bilbomd/mongodb-schema'
 import path from 'node:path'
 import fs from 'fs-extra'
 import { config } from '../../config/config.js'
 import { logger } from '../../helpers/loggers.js'
 import { initializeJob, cleanupJob, handleError } from '../functions/job-utils.js'
+import { updateStepStatus } from '../functions/mongo-utils.js'
 import { createProgressTracker } from '../functions/progress-tracker.js'
 import {
   buildAutoMDSaxsConfig,
   buildAutoMDSaxsArgs,
   runAutoMDSaxs,
-  parseAutoMDSaxsManifest
+  parseAutoMDSaxsManifest,
+  createResultsArchive
 } from '../functions/automd-saxs-functions.js'
 
 /**
@@ -38,7 +40,9 @@ const processBilboMDAutoMDSAXSJob = async (MQjob: BullMQJob) => {
   await progress.update(10)
 
   const workDir = path.join(config.uploadDir, foundJob.uuid)
-  const outDir = path.join(workDir, 'automd_saxs_output')
+  // Write results into the conventional `results/` dir so the generic
+  // "Download Results" endpoint can bundle and serve them.
+  const outDir = path.join(workDir, 'results')
 
   try {
     // validate inputs
@@ -133,6 +137,12 @@ const processBilboMDAutoMDSAXSJob = async (MQjob: BullMQJob) => {
         `${parsed.message} (CLI exit code ${result.code})`
       )
     }
+    // Bundle results for the generic Download Results endpoint.
+    await createResultsArchive(workDir, foundJob.uuid)
+    await updateStepStatus(foundJob, 'results', {
+      status: StepStatus.Success,
+      message: parsed.message
+    })
     await MQjob.log('end automd-saxs-results')
 
     foundJob.results_ready = true

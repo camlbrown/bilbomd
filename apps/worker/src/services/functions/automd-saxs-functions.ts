@@ -1,6 +1,9 @@
-import { spawn } from 'node:child_process'
+import { spawn, execFile } from 'node:child_process'
 import readline from 'node:readline'
 import { once } from 'node:events'
+import { promisify } from 'node:util'
+
+const execFileP = promisify(execFile)
 
 /**
  * Helpers for the AutoMD-SAXS worker pathway.
@@ -131,6 +134,21 @@ export const runAutoMDSaxs = async (
     rlOut?.close()
     rlErr?.close()
   }
+}
+
+/**
+ * Bundle the results directory into `results-<uuidPrefix>.tar.gz` so BilboMD's
+ * generic "Download Results" endpoint (which looks for that name) can serve it.
+ * Matches the tar invocation used by prepare-results for the classic jobs.
+ */
+export const createResultsArchive = async (
+  workDir: string,
+  uuid: string,
+  resultsDir = 'results'
+): Promise<string> => {
+  const archiveName = `results-${uuid.split('-')[0]}.tar.gz`
+  await execFileP('tar', ['czf', archiveName, resultsDir], { cwd: workDir })
+  return archiveName
 }
 
 export interface AutoMDSaxsManifestSummary {
