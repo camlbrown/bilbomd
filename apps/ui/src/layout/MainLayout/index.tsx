@@ -126,6 +126,13 @@ export default function ClippedDrawer() {
       path: '/dashboard/jobs/carbonara',
       onclick: () => navigate('dashboard/jobs/carbonara'),
       roles: ['user', 'manager']
+    },
+    {
+      text: 'AutoMD-SAXS',
+      icon: <AddCircleOutlineOutlined />,
+      path: '/dashboard/jobs/automd-saxs',
+      onclick: () => navigate('dashboard/jobs/automd-saxs'),
+      roles: ['user', 'manager']
     }
   ]
 

@@ -47,6 +47,9 @@ const NewScoperJob = Loadable(
 const NewCarbonaraJob = Loadable(
   lazy(() => import('features/carbonarajob/NewCarbonaraJobForm'))
 )
+const NewAutoMDSaxsJob = Loadable(
+  lazy(() => import('features/automdsaxsjob/NewAutoMDSaxsJobForm'))
+)
 const NewMultiJob = Loadable(
   lazy(() => import('features/multimd/NewMultiMDJobForm'))
 )
@@ -197,6 +200,10 @@ const ProtectedMainRoutes = {
                     {
                       path: 'jobs/carbonara',
                       element: <NewCarbonaraJob />
+                    },
+                    {
+                      path: 'jobs/automd-saxs',
+                      element: <NewAutoMDSaxsJob />
                     },
                     {
                       path: 'jobs/multimd',
