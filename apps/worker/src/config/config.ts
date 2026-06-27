@@ -204,5 +204,13 @@ export const config = {
     ),
     // Optional host path to bind-mount the helper for local dev (like autoFlexMount).
     resultsMount: getEnvVarWithDefault('CARBONARA_RESULTS_MOUNT', '')
+  },
+  // AutoMD-SAXS: external `automd-saxs` CLI (pip-installed alongside the worker;
+  // OpenMM/FoXS come from the worker image). The worker writes a config.json,
+  // runs `automd-saxs run --config config.json --out <jobdir>`, then reads the
+  // manifest.json it produces.
+  automdSaxs: {
+    bin: getEnvVarWithDefault('AUTOMD_SAXS_BIN', 'automd-saxs'),
+    timeoutMs: parseTimeoutEnv('AUTOMD_SAXS_TIMEOUT_MS', 0)
   }
 }
