@@ -70,8 +70,7 @@ export const bilbomdAutoMDSaxsJobSchema = object().shape({
   water_model: string().oneOf(['tip3p', 'tip3pfb', 'spce']).notRequired(),
   simulation_time_ns: number()
     .typeError('Simulation length must be a number')
-    .integer('Must be a whole number of ns')
-    .min(1, 'Must be at least 1 ns')
+    .moreThan(0, 'Must be > 0 ns')
     .max(10000, 'Too large')
     .notRequired(),
   n_repeats: number()

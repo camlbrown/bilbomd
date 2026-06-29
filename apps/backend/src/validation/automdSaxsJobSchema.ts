@@ -67,8 +67,7 @@ export const automdSaxsJobSchema = yup.object({
   simulation_time_ns: yup
     .number()
     .typeError('simulation_time_ns must be a number')
-    .integer('simulation_time_ns must be an integer')
-    .min(1, 'simulation_time_ns must be at least 1')
+    .moreThan(0, 'simulation_time_ns must be > 0')
     .max(10000, 'simulation_time_ns too large')
     .optional(),
   n_repeats: yup
