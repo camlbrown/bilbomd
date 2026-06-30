@@ -43,6 +43,9 @@ const CarbonaraResults = lazy(
 const AutoMDSAXSResults = lazy(
   () => import('features/automdsaxsjob/AutoMDSAXSResults')
 )
+const AutoMDSAXSLiveProgress = lazy(
+  () => import('features/automdsaxsjob/AutoMDSAXSLiveProgress')
+)
 import { useGetConfigsQuery } from 'slices/configsApiSlice'
 import {
   useGetJobByIdQuery,
@@ -347,6 +350,16 @@ const SingleJobPage = () => {
               id && (
                 <Item sx={{ mt: 2 }}>
                   <CarbonaraLiveProgress jobId={id} />
+                </Item>
+              )}
+            {/* Live AutoMD-SAXS stage + per-repeat ns progress while running. */}
+            {job.mongo.jobType === 'automd-saxs' &&
+              job.mongo.status === 'Running' &&
+              id && (
+                <Item sx={{ mt: 2 }}>
+                  <Suspense fallback={<CircularProgress />}>
+                    <AutoMDSAXSLiveProgress jobId={id} />
+                  </Suspense>
                 </Item>
               )}
           </Grid>

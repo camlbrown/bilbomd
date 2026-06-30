@@ -188,6 +188,22 @@ export interface AutoMDSAXSAnalysis {
   notes?: string[]
 }
 
+// AutoMD-SAXS live progress (polled while the job runs).
+export interface AutoMDSAXSRepeatProgress {
+  repeat: number
+  stepDone: number
+  stepTotal: number
+  nsDone: number
+  nsTotal: number
+}
+export interface AutoMDSAXSLiveProgress {
+  status: string
+  stage?: string | null
+  currentRepeat?: number
+  nRepeats?: number
+  repeats?: AutoMDSAXSRepeatProgress[]
+}
+
 const jobsAdapter = createEntityAdapter<BilboMDJobDTO>()
 
 const initialState = jobsAdapter.getInitialState()
@@ -443,6 +459,13 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
       }),
       providesTags: (_, __, id) => [{ type: 'Job', id }]
     }),
+    getAutoMDSAXSLiveProgress: builder.query<AutoMDSAXSLiveProgress, string>({
+      query: (jobId) => ({
+        url: `/jobs/${jobId}/automd-saxs-live-progress`,
+        method: 'GET'
+      }),
+      providesTags: (_, __, id) => [{ type: 'Job', id }]
+    }),
     // Carbonara results: fetch a single AA PDB text for the 3D viewer
     getCarbonaraAaPdb: builder.query<
       string,
@@ -514,6 +537,7 @@ export const {
   useLazyGetCarbonaraAutoFlexQuery,
   useGetCarbonaraAnalysisQuery,
   useGetAutoMDSAXSAnalysisQuery,
+  useGetAutoMDSAXSLiveProgressQuery,
   useLazyGetCarbonaraAaPdbQuery,
   useLazyGetCarbonaraOriginalPdbQuery,
   useLazyGetCarbonaraOriginalPdbBySubQuery,
