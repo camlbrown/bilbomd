@@ -12,7 +12,18 @@ import {
   TableCell
 } from '@mui/material'
 import Grid from '@mui/material/Grid'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts'
 import { useGetAutoMDSAXSAnalysisQuery } from 'slices/jobsApiSlice'
+import type { AutoMDSAXSPerFrame } from 'slices/jobsApiSlice'
 
 interface AutoMDSAXSResultsProps {
   jobId: string
@@ -96,6 +107,14 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
   const params = data.parameters ?? {}
   const outputs = data.outputs ?? {}
   const usesSaxs = Boolean(data.inputs?.saxs)
+  const perFrame: AutoMDSAXSPerFrame[] = Array.isArray(params.perFrame)
+    ? params.perFrame
+    : []
+  // Top fits = lowest chi^2 frames (chi^2 may be null for unparsed frames).
+  const topFits = perFrame
+    .filter((f) => typeof f.chi2 === 'number')
+    .sort((a, b) => (a.chi2 as number) - (b.chi2 as number))
+    .slice(0, 5)
 
   return (
     <Paper sx={{ p: 2, my: 1 }}>
@@ -136,6 +155,81 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
           No experimental SAXS data was provided, so χ² fitting was skipped. The
           MD trajectories and structural clustering are still available below.
         </Alert>
+      )}
+
+      {/* Per-frame chi^2 / Rg across the combined trajectory */}
+      {usesSaxs && perFrame.length > 0 && (
+        <Box sx={{ my: 2 }}>
+          <Typography
+            variant="subtitle2"
+            sx={{ mb: 1 }}
+          >
+            Per-frame fit (χ² and Rg across all production frames)
+          </Typography>
+          <ResponsiveContainer
+            width="100%"
+            height={260}
+          >
+            <LineChart data={perFrame} margin={{ top: 5, right: 30, left: 5, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis
+                dataKey="frame"
+                label={{ value: 'frame', position: 'insideBottom', offset: -2 }}
+              />
+              <YAxis
+                yAxisId="chi2"
+                label={{ value: 'χ²', angle: -90, position: 'insideLeft' }}
+              />
+              <YAxis
+                yAxisId="rg"
+                orientation="right"
+                label={{ value: 'Rg (Å)', angle: 90, position: 'insideRight' }}
+              />
+              <Tooltip />
+              <Legend />
+              <Line
+                yAxisId="chi2"
+                type="monotone"
+                dataKey="chi2"
+                name="χ²"
+                stroke="#d2691e"
+                dot={false}
+              />
+              <Line
+                yAxisId="rg"
+                type="monotone"
+                dataKey="rg"
+                name="Rg (Å)"
+                stroke="#1f77b4"
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+
+          {/* Top fits by chi^2 */}
+          <Typography
+            variant="subtitle2"
+            sx={{ mt: 2, mb: 1 }}
+          >
+            Best-fitting frames
+          </Typography>
+          <Table size="small">
+            <TableBody>
+              <TableRow>
+                <TableCell sx={{ color: 'text.secondary' }}>Frame</TableCell>
+                <TableCell sx={{ color: 'text.secondary' }}>χ²</TableCell>
+                <TableCell sx={{ color: 'text.secondary' }}>Rg (Å)</TableCell>
+              </TableRow>
+              {topFits.map((f) => (
+                <TableRow key={f.frame}>
+                  <TableCell>{f.frame}</TableCell>
+                  <TableCell>{fmtNumber(f.chi2)}</TableCell>
+                  <TableCell>{fmtNumber(f.rg, 2)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
       )}
 
       <Divider sx={{ my: 2 }} />

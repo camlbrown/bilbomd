@@ -39,7 +39,8 @@ export const useJobProperties = (
       scoper: 'BilboMD Scoper',
       multi: 'BilboMD MultiMD',
       openfold: 'BilboMD OF3',
-      carbonara: 'BilboMD Carbonara'
+      carbonara: 'BilboMD Carbonara',
+      'automd-saxs': 'BilboMD AutoMD-SAXS'
     }
 
     const getJobTypeDisplayName = (type?: string) =>
@@ -88,7 +89,9 @@ export const useJobProperties = (
               value:
                 job.mongo.jobType === 'scoper'
                   ? 'KGSRNA'
-                  : (job.mongo.md_engine ?? 'CHARMM')
+                  : job.mongo.jobType === 'automd-saxs'
+                    ? 'OpenMM'
+                    : (job.mongo.md_engine ?? 'CHARMM')
             }
           ]),
       { label: 'Submitted', value: job.mongo.time_submitted },

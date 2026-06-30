@@ -8,7 +8,8 @@ import type {
   BilboMDScoperDTO,
   BilboMDAlphaFoldDTO,
   BilboMDOpenFoldDTO,
-  BilboMDCarbonaraDTO
+  BilboMDCarbonaraDTO,
+  BilboMDAutoMDSAXSDTO
 } from '@bilbomd/bilbomd-types'
 import type { JobHandler, MongoDBProperty } from '../types'
 import { ConstraintFileChip } from '../components/ConstraintFileChip'
@@ -368,5 +369,33 @@ export const createOpenFoldJobHandler = (): JobHandler => ({
       { label: 'Rg values', value: getRgValues(job) },
       { label: 'Number of conformations', value: getConformationCount(job) }
     ]
+  }
+})
+
+export const createAutoMDSaxsJobHandler = (): JobHandler => ({
+  getJobTypeDisplayName: () => 'BilboMD AutoMD-SAXS',
+
+  getJobSpecificProperties: (job: BilboMDJobDTO): MongoDBProperty[] => {
+    const j = job.mongo as BilboMDAutoMDSAXSDTO
+    const props: MongoDBProperty[] = [
+      { label: 'Structure file', value: j.pdb_file },
+      { label: 'System', value: j.system ?? 'Protein' },
+      { label: 'Force field', value: j.force_field ?? 'amber14' },
+      { label: 'Water model', value: j.water_model ?? 'tip3p' },
+      { label: 'Simulation length', value: j.simulation_time_ns, suffix: ' ns' },
+      { label: 'Production repeats', value: j.n_repeats },
+      { label: 'Temperature', value: j.temperature_K ?? 300, suffix: ' K' },
+      {
+        label: 'Ionic concentration',
+        value: j.ionic_concentration_M ?? 0.15,
+        suffix: ' M'
+      },
+      { label: 'pH', value: j.ph ?? 7 },
+      { label: 'Disulfides', value: j.disulfide ? 'Yes' : 'No' }
+    ]
+    if (j.box_padding_nm) {
+      props.push({ label: 'Box padding', value: j.box_padding_nm, suffix: ' nm' })
+    }
+    return props
   }
 })

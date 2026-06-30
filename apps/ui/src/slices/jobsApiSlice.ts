@@ -174,11 +174,16 @@ export interface CarbonaraAnalysis {
 
 // AutoMD-SAXS results manifest (results/manifest.json). Fields are optional so
 // the same type covers the { status: 'pending' } poll response.
+export interface AutoMDSAXSPerFrame {
+  frame: number
+  chi2: number | null
+  rg: number | null
+}
 export interface AutoMDSAXSAnalysis {
   status: string
   pipeline?: string
   inputs?: { pdb?: string | null; saxs?: string | null }
-  parameters?: Record<string, unknown>
+  parameters?: Record<string, unknown> & { perFrame?: AutoMDSAXSPerFrame[] }
   outputs?: Record<string, string[]>
   metrics?: {
     bestChi2?: number | null

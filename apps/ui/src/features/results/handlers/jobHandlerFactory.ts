@@ -8,7 +8,8 @@ import {
   createAlphaFoldJobHandler,
   createMultiJobHandler,
   createOpenFoldJobHandler,
-  createCarbonaraJobHandler
+  createCarbonaraJobHandler,
+  createAutoMDSaxsJobHandler
 } from './jobHandlers'
 
 export const createJobHandler = (jobType: string): JobHandler => {
@@ -31,6 +32,8 @@ export const createJobHandler = (jobType: string): JobHandler => {
       return createMultiJobHandler()
     case 'carbonara':
       return createCarbonaraJobHandler()
+    case 'automd-saxs':
+      return createAutoMDSaxsJobHandler()
     default:
       throw new Error(`Unknown job type: ${jobType}`)
   }
