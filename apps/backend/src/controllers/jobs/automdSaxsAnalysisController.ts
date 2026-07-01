@@ -63,6 +63,109 @@ export const getAutoMDSAXSAnalysis = async (
   }
 }
 
+/**
+ * GET /jobs/:id/automd-saxs-trajectory?repeat=N&maxModels=M
+ *
+ * Builds a solvent-free multi-model PDB for one production repeat by
+ * concatenating the per-frame structure_*.pdb files the pipeline extracted
+ * (already stripped of water/ions). The frames are numerically ordered and
+ * subsampled to at most `maxModels` (default 30) so the browser viewer can
+ * animate the trajectory without loading every frame. Each frame becomes one
+ * MODEL/ENDMDL block; a single CRYST1 header is preserved and CONECT records
+ * are dropped (Molstar derives bonds). Returns text/plain PDB, or 404 if the
+ * repeat has no extracted frames yet.
+ */
+export const getAutoMDSAXSTrajectory = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const rawId = req.params['id']
+  const id = Array.isArray(rawId) ? rawId[0] : rawId
+  if (!id) {
+    res.status(400).json({ message: 'Job ID required.' })
+    return
+  }
+
+  const repeat = Math.max(1, parseInt(String(req.query['repeat'] ?? '1'), 10) || 1)
+  const maxModels = Math.min(
+    200,
+    Math.max(2, parseInt(String(req.query['maxModels'] ?? '30'), 10) || 30)
+  )
+
+  try {
+    const job = await Job.findOne({ _id: id }).exec()
+    if (!job) {
+      res.status(404).json({ message: `No job matches ID ${id}.` })
+      return
+    }
+    if (job.__t !== 'BilboMdAutoMDSAXS') {
+      res.status(400).json({
+        message: 'This endpoint is only available for AutoMD-SAXS jobs.'
+      })
+      return
+    }
+
+    const framesDir = path.join(
+      uploadFolder,
+      job.uuid,
+      'results',
+      'frames',
+      `rep${repeat}`
+    )
+    if (!(await fs.pathExists(framesDir))) {
+      res.status(404).json({ message: `No frames for repeat ${repeat}.` })
+      return
+    }
+
+    const entries = await fs.readdir(framesDir)
+    const frames = entries
+      .map((name) => {
+        const m = name.match(/^structure_(\d+)\.pdb$/)
+        return m ? { name, index: parseInt(m[1], 10) } : null
+      })
+      .filter((f): f is { name: string; index: number } => f !== null)
+      .sort((a, b) => a.index - b.index)
+
+    if (frames.length === 0) {
+      res.status(404).json({ message: `No frames for repeat ${repeat}.` })
+      return
+    }
+
+    // Subsample evenly to at most maxModels frames (always keep first & last).
+    const stride = Math.max(1, Math.ceil(frames.length / maxModels))
+    const picked = frames.filter((_, i) => i % stride === 0)
+    if (picked[picked.length - 1]!.index !== frames[frames.length - 1]!.index) {
+      picked.push(frames[frames.length - 1]!)
+    }
+
+    const isAtom = (line: string): boolean =>
+      line.startsWith('ATOM') || line.startsWith('HETATM') || line.startsWith('TER')
+
+    let cryst = ''
+    const blocks: string[] = []
+    for (let i = 0; i < picked.length; i++) {
+      const text = await fs.readFile(path.join(framesDir, picked[i]!.name), 'utf8')
+      const lines = text.split('\n')
+      if (!cryst) {
+        const c = lines.find((l) => l.startsWith('CRYST1'))
+        if (c) cryst = c
+      }
+      const atomLines = lines.filter(isAtom).join('\n')
+      const modelNum = String(i + 1).padStart(8, ' ')
+      blocks.push(`MODEL ${modelNum}\n${atomLines}\nENDMDL`)
+    }
+
+    const header = cryst ? `${cryst}\n` : ''
+    const pdb = `${header}${blocks.join('\n')}\nEND\n`
+
+    res.status(200).type('text/plain').send(pdb)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    logger.error(`getAutoMDSAXSTrajectory ${id}: ${msg}`)
+    res.status(500).json({ message: 'Failed to build AutoMD-SAXS trajectory.' })
+  }
+}
+
 // Read the last integration step from an OpenMM StateDataReporter log (CSV with
 // a quoted header; first column is Step). Returns null if unreadable/empty.
 const lastStepFromLog = async (logPath: string): Promise<number | null> => {

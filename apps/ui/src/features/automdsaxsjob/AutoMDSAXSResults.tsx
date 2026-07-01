@@ -30,6 +30,7 @@ import {
   ResponsiveContainer
 } from 'recharts'
 import { useGetAutoMDSAXSAnalysisQuery } from 'slices/jobsApiSlice'
+import AutoMDSAXSTrajectoryViewer from './AutoMDSAXSTrajectoryViewer'
 import type {
   AutoMDSAXSPerFrame,
   AutoMDSAXSTimePoint,
@@ -447,14 +448,18 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
         </Box>
       )}
 
-      {/* ---------------- MD Movies (viewer coming next) ---------------- */}
-      {tab === 2 && (
-        <Alert severity="info">
-          A 3D trajectory viewer (per-repeat, solvent-free, every N frames) is in
-          progress. The solvent-free frames are already produced — for now, use
-          Download Results to fetch the per-repeat frames and trajectories.
-        </Alert>
-      )}
+      {/* ---------------- MD Movies ---------------- */}
+      {tab === 2 &&
+        (repeats.length > 0 ? (
+          <AutoMDSAXSTrajectoryViewer
+            jobId={jobId}
+            repeats={repeats}
+          />
+        ) : (
+          <Alert severity="info">
+            No extracted trajectory frames are available for this job yet.
+          </Alert>
+        ))}
 
       {/* ---------------- MD Parameters ---------------- */}
       {tab === 3 && (

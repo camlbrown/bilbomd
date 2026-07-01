@@ -12,7 +12,8 @@ import { createCarbonaraJob } from '../controllers/jobs/carbonaraJobController.j
 import { createAutoMDSaxsJob } from '../controllers/jobs/automdSaxsJobController.js'
 import {
   getAutoMDSAXSAnalysis,
-  getAutoMDSAXSLiveProgress
+  getAutoMDSAXSLiveProgress,
+  getAutoMDSAXSTrajectory
 } from '../controllers/jobs/automdSaxsAnalysisController.js'
 import {
   createCarbonaraInitFoxs,
@@ -82,6 +83,7 @@ router.route('/:id/carbonara-live-progress').get(getCarbonaraLiveProgress)
 // AutoMD-SAXS results: also before '/:id/:filename'.
 router.route('/:id/automd-saxs-analysis').get(getAutoMDSAXSAnalysis)
 router.route('/:id/automd-saxs-live-progress').get(getAutoMDSAXSLiveProgress)
+router.route('/:id/automd-saxs-trajectory').get(getAutoMDSAXSTrajectory)
 router.route('/:id/logs').get(getLogForStep)
 router.route('/:id/check-files').get(checkFiles)
 router.route('/:id/movies').get(getMovies)
