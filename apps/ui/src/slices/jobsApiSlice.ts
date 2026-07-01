@@ -176,14 +176,37 @@ export interface CarbonaraAnalysis {
 // the same type covers the { status: 'pending' } poll response.
 export interface AutoMDSAXSPerFrame {
   frame: number
+  repeat?: number | null
+  frameInRep?: number | null
+  timeNs?: number | null
   chi2: number | null
   rg: number | null
+}
+export interface AutoMDSAXSTimePoint {
+  repeat: number
+  frame: number
+  timeNs: number
+  rg: number | null
+  rmsd: number | null
+  sasa: number | null
+}
+export interface AutoMDSAXSPcaPoint {
+  frame: number
+  pc1: number
+  pc2: number
+  chi2: number | null
+  cluster: number | null
 }
 export interface AutoMDSAXSAnalysis {
   status: string
   pipeline?: string
   inputs?: { pdb?: string | null; saxs?: string | null }
-  parameters?: Record<string, unknown> & { perFrame?: AutoMDSAXSPerFrame[] }
+  parameters?: Record<string, unknown> & {
+    perFrame?: AutoMDSAXSPerFrame[]
+    timeSeries?: AutoMDSAXSTimePoint[]
+    pca?: AutoMDSAXSPcaPoint[]
+    nClusters?: number
+  }
   outputs?: Record<string, string[]>
   metrics?: {
     bestChi2?: number | null

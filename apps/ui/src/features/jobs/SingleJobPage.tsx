@@ -420,8 +420,26 @@ const SingleJobPage = () => {
           </Grid>
         )}
 
+        {/* AutoMD-SAXS results own their own tabbed panel (FoXS / Structural /
+            MD Movies / MD Parameters), so render it standalone rather than in the
+            generic analysis-tab shell below. */}
+        {job.mongo.status === 'Completed' &&
+          job.mongo.jobType === 'automd-saxs' &&
+          id && (
+            <Grid size={{ xs: 12 }}>
+              <HeaderBox sx={{ py: '6px' }}>
+                <Typography>Analysis</Typography>
+              </HeaderBox>
+              <Suspense fallback={<CircularProgress />}>
+                <AutoMDSAXSResults jobId={id} />
+              </Suspense>
+            </Grid>
+          )}
+
         {/* Analysis Tabs */}
-        {job.mongo.status === 'Completed' && job.mongo.jobType !== 'scoper' && (
+        {job.mongo.status === 'Completed' &&
+          job.mongo.jobType !== 'scoper' &&
+          job.mongo.jobType !== 'automd-saxs' && (
           <>
             <Grid size={{ xs: 12 }}>
               <HeaderBox sx={{ py: '6px' }}>
@@ -476,13 +494,6 @@ const SingleJobPage = () => {
                               .mixture_pdb_files
                           }
                         />
-                      </Suspense>
-                    </Grid>
-                  )}
-                  {job.mongo.jobType === 'automd-saxs' && id && (
-                    <Grid size={{ xs: 12 }}>
-                      <Suspense fallback={<CircularProgress />}>
-                        <AutoMDSAXSResults jobId={id} />
                       </Suspense>
                     </Grid>
                   )}
