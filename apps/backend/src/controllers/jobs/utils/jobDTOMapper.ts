@@ -9,6 +9,7 @@ import type {
   BilboMDSANSDTO,
   BilboMDScoperDTO,
   BilboMDCarbonaraDTO,
+  BilboMDAutoMDSAXSDTO,
   JobType,
   JobStatusEnum as JobStatus,
   UserSummaryDTO,
@@ -25,7 +26,8 @@ import type {
   IBilboMDOpenFoldJob,
   IBilboMDSANSJob,
   IBilboMDScoperJob,
-  IBilboMDCarbonaraJob
+  IBilboMDCarbonaraJob,
+  IBilboMDAutoMDSAXSJob
 } from '@bilbomd/mongodb-schema'
 
 export const mapDiscriminatorToJobType = (__t?: string): JobType => {
@@ -46,6 +48,8 @@ export const mapDiscriminatorToJobType = (__t?: string): JobType => {
       return 'scoper'
     case 'BilboMdCarbonara':
       return 'carbonara'
+    case 'BilboMdAutoMDSAXS':
+      return 'automd-saxs'
     case 'MultiJob':
       return 'multi'
     default:
@@ -276,6 +280,26 @@ export const mapJobMongoToDTO = (job: IJob) => {
         multimer: carbonaraJob.multimer,
         chain_merges: carbonaraJob.chain_merges as number[][] | undefined
       } as BilboMDCarbonaraDTO
+    }
+
+    case 'automd-saxs': {
+      const amsJob = job as IBilboMDAutoMDSAXSJob
+      return {
+        ...base,
+        pdb_file: amsJob.pdb_file,
+        dat_file: amsJob.dat_file,
+        system: amsJob.system,
+        force_field: amsJob.force_field,
+        water_model: amsJob.water_model,
+        simulation_time_ns: amsJob.simulation_time_ns,
+        n_repeats: amsJob.n_repeats,
+        temperature_K: amsJob.temperature_K,
+        ionic_concentration_M: amsJob.ionic_concentration_M,
+        ph: amsJob.ph,
+        disulfide: amsJob.disulfide,
+        box_padding_nm: amsJob.box_padding_nm,
+        seed: amsJob.seed
+      } as BilboMDAutoMDSAXSDTO
     }
 
     case 'multi':
