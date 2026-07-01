@@ -43,6 +43,35 @@ interface AutoMDSAXSResultsProps {
 
 const REPEAT_COLORS = ['#1f77b4', '#d2691e', '#2ca02c', '#9467bd', '#8c564b']
 
+// Categorical palette for cluster colouring (distinct, colour-blind friendly).
+const CLUSTER_COLORS = [
+  '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
+  '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac',
+  '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+  '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+]
+const clusterColor = (c: number | null): string =>
+  c == null || c < 0 ? '#bbbbbb' : CLUSTER_COLORS[c % CLUSTER_COLORS.length]!
+
+// Viridis anchor colours (reversed: low χ² = yellow/good fit, high = purple),
+// mirroring the original AutoMD-SAXS `cmap='viridis_r'` PCA colouring.
+const VIRIDIS_R = ['#fde725', '#5ec962', '#21918c', '#3b528b', '#440154']
+const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t)
+const hexToRgb = (h: string): [number, number, number] => [
+  parseInt(h.slice(1, 3), 16),
+  parseInt(h.slice(3, 5), 16),
+  parseInt(h.slice(5, 7), 16)
+]
+const viridisR = (t: number): string => {
+  const clamped = Math.max(0, Math.min(1, t))
+  const seg = clamped * (VIRIDIS_R.length - 1)
+  const i = Math.min(VIRIDIS_R.length - 2, Math.floor(seg))
+  const f = seg - i
+  const [r1, g1, b1] = hexToRgb(VIRIDIS_R[i]!)
+  const [r2, g2, b2] = hexToRgb(VIRIDIS_R[i + 1]!)
+  return `rgb(${lerp(r1, r2, f)},${lerp(g1, g2, f)},${lerp(b1, b2, f)})`
+}
+
 const fmtNumber = (value: unknown, digits = 3): string => {
   if (typeof value !== 'number' || Number.isNaN(value)) return '—'
   return value.toFixed(digits)
@@ -169,19 +198,23 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
   const tsData = pivotByRepeat(
     timeSeries as unknown as Record<string, unknown>[],
     'timeNs',
-    ['rg', 'rmsd', 'sasa']
+    ['rg', 'rmsd', 'sasa', 'hbonds', 'energy']
   )
+  const hasHbonds = timeSeries.some((t) => typeof t.hbonds === 'number')
+  const hasEnergy = timeSeries.some((t) => typeof t.energy === 'number')
   // chi2 colour scale for the PCA scatter
   const chi2vals = pca.map((p) => p.chi2).filter((c): c is number => c != null)
   const chi2min = chi2vals.length ? Math.min(...chi2vals) : 0
   const chi2max = chi2vals.length ? Math.max(...chi2vals) : 1
   const chi2color = (c: number | null) => {
     if (c == null || chi2max === chi2min) return '#888'
-    const t = (c - chi2min) / (chi2max - chi2min) // 0 best (blue) .. 1 worst (red)
-    const r = Math.round(255 * t)
-    const b = Math.round(255 * (1 - t))
-    return `rgb(${r},80,${b})`
+    const t = (c - chi2min) / (chi2max - chi2min) // 0 best .. 1 worst
+    return viridisR(t)
   }
+  // Distinct cluster ids present in the PCA data (excludes outliers, -1).
+  const clusterIds = Array.from(
+    new Set(pca.map((p) => p.cluster).filter((c): c is number => c != null && c >= 0))
+  ).sort((a, b) => a - b)
 
   const RepeatToggles = () =>
     repeats.length > 1 ? (
@@ -254,6 +287,34 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
       </ResponsiveContainer>
     </Box>
   )
+
+  // Vertical χ² gradient legend (recharts has no built-in colorbar). Top = best
+  // fit (low χ²), matching the viridis_r scale used to colour the points.
+  const ChiColorBar = () => {
+    const stops = [0, 0.25, 0.5, 0.75, 1]
+      .map((t) => `${viridisR(t)} ${t * 100}%`)
+      .join(', ')
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', ml: 1 }}>
+        <Typography variant="caption" color="text.secondary">χ²</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 0.5, height: 260 }}>
+          <Box
+            sx={{
+              width: 16,
+              borderRadius: 0.5,
+              border: '1px solid #ccc',
+              background: `linear-gradient(to bottom, ${stops})`
+            }}
+          />
+          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <Typography variant="caption">{fmtNumber(chi2min, 1)}</Typography>
+            <Typography variant="caption" color="text.secondary">best fit ↑</Typography>
+            <Typography variant="caption">{fmtNumber(chi2max, 1)}</Typography>
+          </Box>
+        </Box>
+      </Box>
+    )
+  }
 
   return (
     <Paper sx={{ p: 2, my: 1 }}>
@@ -389,41 +450,88 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
       {tab === 1 && (
         <Box>
           {pca.length > 0 ? (
-            <>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                PCA of the Cα combined trajectory
-                {usesSaxs ? ' (coloured by χ², blue = best fit)' : ''} —{' '}
-                {typeof params.nClusters === 'number'
-                  ? `${params.nClusters} cluster(s)`
-                  : 'clustering complete'}
-              </Typography>
-              <ResponsiveContainer width="100%" height={320}>
-                <ScatterChart margin={{ top: 5, right: 20, left: 5, bottom: 15 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    type="number"
-                    dataKey="pc1"
-                    name="PC1"
-                    label={{ value: 'PC1', position: 'insideBottom', offset: -5 }}
-                  />
-                  <YAxis
-                    type="number"
-                    dataKey="pc2"
-                    name="PC2"
-                    label={{ value: 'PC2', angle: -90, position: 'insideLeft' }}
-                  />
-                  <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                  <Scatter data={pca} fill="#8884d8">
-                    {pca.map((p, i) => (
-                      <Cell
-                        key={i}
-                        fill={usesSaxs ? chi2color(p.chi2) : '#1f77b4'}
+            <Grid container spacing={3}>
+              {/* SAXS-scored PCA (only meaningful with experimental SAXS) */}
+              {usesSaxs && (
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    PCA of the Cα trajectory — coloured by SAXS fit (χ²)
+                  </Typography>
+                  <Box sx={{ display: 'flex' }}>
+                    <Box sx={{ flexGrow: 1 }}>
+                      <ResponsiveContainer width="100%" height={320}>
+                        <ScatterChart margin={{ top: 5, right: 10, left: 5, bottom: 15 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis
+                            type="number"
+                            dataKey="pc1"
+                            name="PC1"
+                            label={{ value: 'PC1', position: 'insideBottom', offset: -5 }}
+                          />
+                          <YAxis
+                            type="number"
+                            dataKey="pc2"
+                            name="PC2"
+                            label={{ value: 'PC2', angle: -90, position: 'insideLeft' }}
+                          />
+                          <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                          <Scatter data={pca} fill="#8884d8">
+                            {pca.map((p, i) => (
+                              <Cell key={i} fill={chi2color(p.chi2)} />
+                            ))}
+                          </Scatter>
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </Box>
+                    <ChiColorBar />
+                  </Box>
+                </Grid>
+              )}
+
+              {/* Cluster-coloured PCA (CLoNe clusters) */}
+              <Grid size={{ xs: 12, md: usesSaxs ? 6 : 12 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  PCA of the Cα trajectory — coloured by CLoNe cluster
+                  {typeof params.nClusters === 'number'
+                    ? ` (${params.nClusters} clusters)`
+                    : ''}
+                </Typography>
+                <ResponsiveContainer width="100%" height={320}>
+                  <ScatterChart margin={{ top: 5, right: 10, left: 5, bottom: 15 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      dataKey="pc1"
+                      name="PC1"
+                      label={{ value: 'PC1', position: 'insideBottom', offset: -5 }}
+                    />
+                    <YAxis
+                      type="number"
+                      dataKey="pc2"
+                      name="PC2"
+                      label={{ value: 'PC2', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                    <Legend />
+                    {pca.some((p) => p.cluster == null || p.cluster < 0) && (
+                      <Scatter
+                        name="Outliers"
+                        data={pca.filter((p) => p.cluster == null || p.cluster < 0)}
+                        fill="#bbbbbb"
+                      />
+                    )}
+                    {clusterIds.map((cid) => (
+                      <Scatter
+                        key={cid}
+                        name={`Cluster ${cid + 1}`}
+                        data={pca.filter((p) => p.cluster === cid)}
+                        fill={clusterColor(cid)}
                       />
                     ))}
-                  </Scatter>
-                </ScatterChart>
-              </ResponsiveContainer>
-            </>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </Grid>
+            </Grid>
           ) : (
             <Alert severity="info" sx={{ mb: 2 }}>
               Clustering / PCA output is not available for this job.
@@ -439,6 +547,12 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
               <TimeSeriesChart metric="rg" label="Radius of gyration (Å)" />
               <TimeSeriesChart metric="rmsd" label="Cα RMSD to first frame (Å)" />
               <TimeSeriesChart metric="sasa" label="SASA (nm²)" />
+              {hasHbonds && (
+                <TimeSeriesChart metric="hbonds" label="Solute H-bond count" />
+              )}
+              {hasEnergy && (
+                <TimeSeriesChart metric="energy" label="Total energy (kJ/mol)" />
+              )}
             </Box>
           ) : (
             <Alert severity="info" sx={{ mt: 2 }}>

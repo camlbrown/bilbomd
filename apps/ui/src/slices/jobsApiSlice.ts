@@ -189,6 +189,8 @@ export interface AutoMDSAXSTimePoint {
   rg: number | null
   rmsd: number | null
   sasa: number | null
+  hbonds: number | null
+  energy: number | null
 }
 export interface AutoMDSAXSPcaPoint {
   frame: number
