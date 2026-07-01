@@ -126,6 +126,12 @@ export const config = {
   // they never trip the required-env validation above; override per deployment.
   carbonara: {
     containerBin: getEnvVarWithDefault('CARBONARA_CONTAINER_BIN', 'podman'),
+    // Execution mode: 'podman' (default) launches the Carbonara runtime as a
+    // nested container (local dev). 'inprocess' runs the same command directly in
+    // the worker pod (for k8s, where nested containers are an anti-pattern and the
+    // Carbonara tools are baked into the worker image; the job dir must be mounted
+    // at the CARBONARA_JOB_MOUNT path). Default preserves current local behaviour.
+    exec: getEnvVarWithDefault('CARBONARA_EXEC', 'podman'),
     image: getEnvVarWithDefault(
       'CARBONARA_IMAGE',
       'carbonara-allatom-runtime:dev'

@@ -727,6 +727,24 @@ export interface RunCarbonaraContainerOptions {
   timeoutMs?: number
   onStdoutLine?: (line: string) => void
   onStderrLine?: (line: string) => void
+  // k8s de-nesting: 'podman' (default) runs the nested container unchanged;
+  // 'inprocess' strips the `podman run … <image>` prefix and runs the remaining
+  // command directly in the worker pod. Requires `image` to locate the split
+  // point. When execMode is unset/'podman' the behaviour is byte-identical.
+  execMode?: string
+  image?: string
+}
+
+// Split a full `podman run … <image> <cmd…>` argv into the bare command that
+// runs in-process (everything after the image). Returns null if it can't split.
+export const inProcessCommandFromArgs = (
+  args: string[],
+  image?: string
+): string[] | null => {
+  if (!image) return null
+  const idx = args.indexOf(image)
+  if (idx < 0 || idx + 1 >= args.length) return null
+  return args.slice(idx + 1)
 }
 
 /**
@@ -741,7 +759,20 @@ export const runCarbonaraContainer = async (
   const { containerBin, args, cwd, timeoutMs, onStdoutLine, onStderrLine } =
     opts
 
-  const child = spawn(containerBin, args, {
+  // Default (podman): spawn the container engine with the full argv (unchanged).
+  // inprocess (k8s): run the command that would have executed inside the
+  // container, directly in this pod.
+  let spawnBin = containerBin
+  let spawnArgs = args
+  if (opts.execMode === 'inprocess') {
+    const cmd = inProcessCommandFromArgs(args, opts.image)
+    if (cmd && cmd.length > 0) {
+      spawnBin = cmd[0]
+      spawnArgs = cmd.slice(1)
+    }
+  }
+
+  const child = spawn(spawnBin, spawnArgs, {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe']
   })

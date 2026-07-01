@@ -152,6 +152,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         containerBin: config.carbonara.containerBin,
         args,
         cwd: workDir,
+        execMode: config.carbonara.exec,
+        image: config.carbonara.image,
         timeoutMs: config.carbonara.timeoutMs,
         onStdoutLine: (line) => logStream.write(line + '\n'),
         onStderrLine: (line) => logStream.write(line + '\n')
@@ -274,6 +276,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
             containerBin: config.carbonara.containerBin,
             args: backmapArgs,
             cwd: workDir,
+            execMode: config.carbonara.exec,
+            image: config.carbonara.image,
             timeoutMs: config.carbonara.backmapTimeoutMs,
             onStdoutLine: (line) => backmapStream.write(line + '\n'),
             onStderrLine: (line) => backmapStream.write(line + '\n')
@@ -398,6 +402,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
                   containerBin: config.carbonara.containerBin,
                   args: mfArgs,
                   cwd: workDir,
+                  execMode: config.carbonara.exec,
+                  image: config.carbonara.multiFoxsImage,
                   timeoutMs: config.carbonara.backmapTimeoutMs,
                   onStdoutLine: (l) => mfStream.write(l + '\n'),
                   onStderrLine: (l) => mfStream.write(l + '\n')
@@ -554,6 +560,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         containerBin: config.carbonara.containerBin,
         args: analysisArgs,
         cwd: workDir,
+        execMode: config.carbonara.exec,
+        image: config.carbonara.image,
         timeoutMs: config.carbonara.backmapTimeoutMs,
         onStdoutLine: (line) => logger.debug(`carbonara-analysis: ${line}`),
         onStderrLine: (line) =>
