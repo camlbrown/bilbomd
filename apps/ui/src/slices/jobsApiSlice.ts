@@ -199,6 +199,35 @@ export interface AutoMDSAXSPcaPoint {
   chi2: number | null
   cluster: number | null
 }
+export interface AutoMDSAXSClustering {
+  pdc: number
+  nClusters: number
+  labels: number[]
+}
+export interface AutoMDSAXSMultiFoxsMember {
+  frame: number | null
+  weight: number
+}
+export interface AutoMDSAXSMultiFoxsFitPoint {
+  q: number
+  exp: number
+  error: number
+  model: number
+}
+export interface AutoMDSAXSMultiFoxsEnsemble {
+  size: number
+  chi2: number | null
+  members: AutoMDSAXSMultiFoxsMember[]
+  curve: AutoMDSAXSMultiFoxsFitPoint[]
+}
+export interface AutoMDSAXSMultiFoxs {
+  ensembles: AutoMDSAXSMultiFoxsEnsemble[]
+  best: {
+    size: number
+    chi2: number | null
+    curve: AutoMDSAXSMultiFoxsFitPoint[]
+  }
+}
 export interface AutoMDSAXSAnalysis {
   status: string
   pipeline?: string
@@ -208,6 +237,9 @@ export interface AutoMDSAXSAnalysis {
     timeSeries?: AutoMDSAXSTimePoint[]
     pca?: AutoMDSAXSPcaPoint[]
     nClusters?: number
+    clusterings?: AutoMDSAXSClustering[]
+    defaultPdc?: number
+    multifoxs?: AutoMDSAXSMultiFoxs
   }
   outputs?: Record<string, string[]>
   metrics?: {

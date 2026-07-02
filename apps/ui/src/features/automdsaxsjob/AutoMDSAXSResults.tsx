@@ -31,10 +31,13 @@ import {
 } from 'recharts'
 import { useGetAutoMDSAXSAnalysisQuery } from 'slices/jobsApiSlice'
 import AutoMDSAXSTrajectoryViewer from './AutoMDSAXSTrajectoryViewer'
+import InitialFitChart from '../carbonarajob/InitialFitChart'
 import type {
   AutoMDSAXSPerFrame,
   AutoMDSAXSTimePoint,
-  AutoMDSAXSPcaPoint
+  AutoMDSAXSPcaPoint,
+  AutoMDSAXSClustering,
+  AutoMDSAXSMultiFoxs
 } from 'slices/jobsApiSlice'
 
 interface AutoMDSAXSResultsProps {
@@ -138,6 +141,8 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
   const [tab, setTab] = useState(0)
   const [xAxis, setXAxis] = useState<'frame' | 'time'>('frame')
   const [shownRepeats, setShownRepeats] = useState<number[] | null>(null)
+  const [selectedPdc, setSelectedPdc] = useState<number | null>(null)
+  const [selectedEnsSize, setSelectedEnsSize] = useState<number | null>(null)
 
   if (isLoading) {
     return (
@@ -165,6 +170,14 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
     ? params.timeSeries
     : []
   const pca: AutoMDSAXSPcaPoint[] = Array.isArray(params.pca) ? params.pca : []
+  const clusterings: AutoMDSAXSClustering[] = Array.isArray(params.clusterings)
+    ? params.clusterings
+    : []
+  const multifoxs: AutoMDSAXSMultiFoxs | undefined = params.multifoxs
+  // frame -> repeat lookup for labelling ensemble members.
+  const repeatOfFrame = new Map<number, number | null | undefined>(
+    perFrame.map((f) => [f.frame, f.repeat])
+  )
 
   const repeats = Array.from(
     new Set(
@@ -211,10 +224,41 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
     const t = (c - chi2min) / (chi2max - chi2min) // 0 best .. 1 worst
     return viridisR(t)
   }
-  // Distinct cluster ids present in the PCA data (excludes outliers, -1).
+  // CLoNe pdc sweep: colour the cluster plot by the selected pdc's labels.
+  const pdcOptions = clusterings.map((c) => c.pdc).sort((a, b) => a - b)
+  const defaultPdc =
+    typeof params.defaultPdc === 'number' ? params.defaultPdc : pdcOptions[0]
+  const activePdc = selectedPdc ?? defaultPdc ?? null
+  const activeClustering = clusterings.find((c) => c.pdc === activePdc)
+  // cluster label for pca row i under the active pdc (falls back to pca.cluster).
+  const clusterAt = (i: number): number | null => {
+    if (activeClustering && i < activeClustering.labels.length)
+      return activeClustering.labels[i]!
+    return pca[i]?.cluster ?? null
+  }
+  // pca points tagged with the active-pdc cluster id, for filtering/legend.
+  const pcaTagged = pca.map((p, i) => ({ ...p, cl: clusterAt(i) }))
   const clusterIds = Array.from(
-    new Set(pca.map((p) => p.cluster).filter((c): c is number => c != null && c >= 0))
+    new Set(pcaTagged.map((p) => p.cl).filter((c): c is number => c != null && c >= 0))
   ).sort((a, b) => a - b)
+  const activeNClusters = activeClustering?.nClusters ?? clusterIds.length
+
+  // ---- MultiFoXS ensemble (FoXS tab) ----
+  const ensembles = multifoxs?.ensembles ?? []
+  const activeEnsSize =
+    selectedEnsSize ?? multifoxs?.best?.size ?? ensembles[0]?.size ?? null
+  const activeEnsemble =
+    ensembles.find((e) => e.size === activeEnsSize) ?? ensembles[0]
+  const ensembleIqData = (activeEnsemble?.curve ?? []).map((p) => ({
+    q: p.q,
+    exp_intensity: p.exp,
+    model_intensity: p.model,
+    error: p.error
+  }))
+  const ensembleResiduals = (activeEnsemble?.curve ?? []).map((p) => ({
+    q: p.q,
+    res: p.error > 0 ? (p.exp - p.model) / p.error : 0
+  }))
 
   const RepeatToggles = () =>
     repeats.length > 1 ? (
@@ -433,11 +477,95 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
                 ))}
               </TableBody>
             </Table>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-              MultiFoXS ensemble fit written to{' '}
-              {(outputs.saxsFits ?? []).length > 0 ? 'ensemble.dat' : '—'} (Download
-              Results for the full ensemble + fit curves).
-            </Typography>
+            {/* ---- MultiFoXS ensemble fit over the MD frames ---- */}
+            {ensembles.length > 0 && activeEnsemble ? (
+              <Box sx={{ mt: 3 }}>
+                <Typography variant="h6" sx={{ mb: 1 }}>
+                  MultiFoXS ensemble fit
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  MultiFoXS selects the best-fitting weighted combination of MD
+                  frames for each ensemble size. Select a size to view its fit and
+                  composition (the FoXS analogue of the original GAJOE step).
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, md: 5 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                      Ensembles by size
+                    </Typography>
+                    <Table size="small">
+                      <TableBody>
+                        <TableRow>
+                          <TableCell sx={{ color: 'text.secondary' }}>Size</TableCell>
+                          <TableCell sx={{ color: 'text.secondary' }}>χ²</TableCell>
+                          <TableCell sx={{ color: 'text.secondary' }}>
+                            Composition (frame · weight)
+                          </TableCell>
+                        </TableRow>
+                        {ensembles.map((e) => (
+                          <TableRow
+                            key={e.size}
+                            hover
+                            selected={e.size === activeEnsSize}
+                            onClick={() => setSelectedEnsSize(e.size)}
+                            sx={{ cursor: 'pointer' }}
+                          >
+                            <TableCell>{e.size}</TableCell>
+                            <TableCell>{fmtNumber(e.chi2)}</TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                {e.members.map((m, i) => {
+                                  const rep = m.frame != null
+                                    ? repeatOfFrame.get(m.frame)
+                                    : undefined
+                                  return (
+                                    <Chip
+                                      key={i}
+                                      size="small"
+                                      variant="outlined"
+                                      label={`${
+                                        m.frame != null ? `f${m.frame}` : '?'
+                                      }${rep ? ` (r${rep})` : ''} · ${(
+                                        m.weight * 100
+                                      ).toFixed(0)}%`}
+                                    />
+                                  )
+                                })}
+                              </Box>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 7 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                      Ensemble fit — size {activeEnsemble.size}, χ²{' '}
+                      {fmtNumber(activeEnsemble.chi2)}
+                    </Typography>
+                    {ensembleIqData.length > 0 ? (
+                      <InitialFitChart
+                        data={ensembleIqData}
+                        residualsData={ensembleResiduals}
+                      />
+                    ) : (
+                      <Alert severity="info">
+                        No fit curve available for this ensemble size.
+                      </Alert>
+                    )}
+                  </Grid>
+                </Grid>
+              </Box>
+            ) : (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mt: 1 }}
+              >
+                MultiFoXS ensemble fit is not available for this job (Download
+                Results for the per-frame fit curves).
+              </Typography>
+            )}
           </Box>
         ) : (
           <Alert severity="info">
@@ -490,12 +618,38 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
 
               {/* Cluster-coloured PCA (CLoNe clusters) */}
               <Grid size={{ xs: 12, md: usesSaxs ? 6 : 12 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  PCA of the Cα trajectory — coloured by CLoNe cluster
-                  {typeof params.nClusters === 'number'
-                    ? ` (${params.nClusters} clusters)`
-                    : ''}
-                </Typography>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    gap: 2,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    mb: 1
+                  }}
+                >
+                  <Typography variant="subtitle2">
+                    PCA — coloured by CLoNe cluster ({activeNClusters} clusters)
+                  </Typography>
+                  {pdcOptions.length > 1 && (
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">
+                        pdc:
+                      </Typography>
+                      <ToggleButtonGroup
+                        size="small"
+                        exclusive
+                        value={activePdc}
+                        onChange={(_, v) => v != null && setSelectedPdc(v)}
+                      >
+                        {pdcOptions.map((p) => (
+                          <ToggleButton key={p} value={p}>
+                            {p}
+                          </ToggleButton>
+                        ))}
+                      </ToggleButtonGroup>
+                    </Box>
+                  )}
+                </Box>
                 <ResponsiveContainer width="100%" height={320}>
                   <ScatterChart margin={{ top: 5, right: 10, left: 5, bottom: 15 }}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -513,10 +667,10 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
                     />
                     <Tooltip cursor={{ strokeDasharray: '3 3' }} />
                     <Legend />
-                    {pca.some((p) => p.cluster == null || p.cluster < 0) && (
+                    {pcaTagged.some((p) => p.cl == null || p.cl < 0) && (
                       <Scatter
                         name="Outliers"
-                        data={pca.filter((p) => p.cluster == null || p.cluster < 0)}
+                        data={pcaTagged.filter((p) => p.cl == null || p.cl < 0)}
                         fill="#bbbbbb"
                       />
                     )}
@@ -524,12 +678,18 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
                       <Scatter
                         key={cid}
                         name={`Cluster ${cid + 1}`}
-                        data={pca.filter((p) => p.cluster === cid)}
+                        data={pcaTagged.filter((p) => p.cl === cid)}
                         fill={clusterColor(cid)}
                       />
                     ))}
                   </ScatterChart>
                 </ResponsiveContainer>
+                {pdcOptions.length > 1 && (
+                  <Typography variant="caption" color="text.secondary">
+                    Lower pdc → more, finer clusters; higher pdc → fewer, broader
+                    clusters (CLoNe density cut-off percentile).
+                  </Typography>
+                )}
               </Grid>
             </Grid>
           ) : (
