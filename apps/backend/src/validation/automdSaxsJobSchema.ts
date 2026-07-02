@@ -103,5 +103,6 @@ export const automdSaxsJobSchema = yup.object({
     .number()
     .typeError('seed must be a number')
     .integer('seed must be an integer')
-    .optional()
+    .optional(),
+  hmr: yup.boolean().optional()
 })

@@ -100,5 +100,6 @@ export const bilbomdAutoMDSaxsJobSchema = object().shape({
     .typeError('Seed must be a number')
     .integer('Must be an integer')
     .notRequired(),
-  disulfide: boolean().notRequired()
+  disulfide: boolean().notRequired(),
+  hmr: boolean().notRequired()
 })

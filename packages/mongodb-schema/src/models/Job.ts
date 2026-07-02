@@ -396,7 +396,8 @@ const bilboMdAutoMDSAXSJobSchema = new Schema<IBilboMDAutoMDSAXSJob>({
   ph: { type: Number, default: 7.0, required: false },
   disulfide: { type: Boolean, default: false, required: false },
   box_padding_nm: { type: Number, required: false },
-  seed: { type: Number, required: false }
+  seed: { type: Number, required: false },
+  hmr: { type: Boolean, default: false, required: false }
 })
 
 jobSchema.index({ uuid: 1 })

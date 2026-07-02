@@ -32,6 +32,7 @@ export interface AutoMDSaxsConfigOptions {
   disulfide?: boolean
   boxPaddingNm?: number
   seed?: number
+  hmr?: boolean
 }
 
 /**
@@ -58,6 +59,7 @@ export const buildAutoMDSaxsConfig = (
   if (opts.disulfide !== undefined) config.disulfide = opts.disulfide
   if (opts.boxPaddingNm !== undefined) config.box_padding_nm = opts.boxPaddingNm
   if (opts.seed !== undefined) config.seed = opts.seed
+  if (opts.hmr !== undefined) config.hmr = opts.hmr
   return config
 }
 

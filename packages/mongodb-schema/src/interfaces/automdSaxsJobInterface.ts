@@ -19,6 +19,7 @@ interface IBilboMDAutoMDSAXSJob extends IJob {
   disulfide?: boolean
   box_padding_nm?: number
   seed?: number
+  hmr?: boolean
 }
 
 export { IBilboMDAutoMDSAXSJob }

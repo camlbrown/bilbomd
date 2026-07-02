@@ -41,6 +41,7 @@ interface AutoMDSaxsJobFormValues {
   box_padding_nm: number | string
   seed: number | string
   disulfide: boolean
+  hmr: boolean
 }
 
 const NewAutoMDSaxsJobForm = () => {
@@ -65,7 +66,8 @@ const NewAutoMDSaxsJobForm = () => {
     temperature_K: 300,
     box_padding_nm: '',
     seed: '',
-    disulfide: false
+    disulfide: false,
+    hmr: false
   }
 
   const onSubmit = async (
@@ -90,6 +92,7 @@ const NewAutoMDSaxsJobForm = () => {
       form.append('box_padding_nm', String(values.box_padding_nm))
     if (values.seed !== '') form.append('seed', String(values.seed))
     form.append('disulfide', values.disulfide.toString())
+    form.append('hmr', values.hmr.toString())
 
     try {
       const newJob = await addNewAutoMDSaxsJob(form).unwrap()
@@ -378,6 +381,46 @@ const NewAutoMDSaxsJobForm = () => {
                           />
                         )}
                       </Field>
+                    </Box>
+
+                    <Box sx={{ my: 1 }}>
+                      <Field name="hmr">
+                        {({
+                          field
+                        }: {
+                          field: {
+                            name: string
+                            value: boolean
+                            onChange: (
+                              e: React.ChangeEvent<HTMLInputElement>
+                            ) => void
+                          }
+                        }) => (
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={field.value}
+                                onChange={field.onChange}
+                                name={field.name}
+                                disabled={isSubmitting}
+                              />
+                            }
+                            label="Fast mode — Hydrogen Mass Repartitioning (4 fs timestep)"
+                          />
+                        )}
+                      </Field>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: 'block', ml: 4, mt: -0.5 }}
+                      >
+                        Repartitions mass onto hydrogen atoms so the simulation can
+                        take a larger timestep (4 fs instead of 2 fs), running the MD
+                        roughly <strong>2× faster</strong> for the same simulated
+                        time. It is a well-established technique with negligible
+                        impact on equilibrium/SAXS ensembles. Leave off for the
+                        conventional 2 fs timestep.
+                      </Typography>
                     </Box>
 
                     <Accordion sx={{ my: 1 }}>

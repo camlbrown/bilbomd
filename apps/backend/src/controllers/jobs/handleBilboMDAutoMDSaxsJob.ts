@@ -99,7 +99,8 @@ const handleBilboMDAutoMDSaxsJob = async (
       ph: req.body.ph,
       disulfide: req.body.disulfide,
       box_padding_nm: req.body.box_padding_nm,
-      seed: req.body.seed
+      seed: req.body.seed,
+      hmr: req.body.hmr
     }
 
     try {
@@ -155,6 +156,7 @@ const handleBilboMDAutoMDSaxsJob = async (
       disulfide: toBoolean(req.body.disulfide),
       box_padding_nm: toOptionalNumber(req.body.box_padding_nm),
       seed: toOptionalNumber(req.body.seed),
+      hmr: toBoolean(req.body.hmr),
       status: 'Submitted',
       time_submitted: new Date(),
       steps,

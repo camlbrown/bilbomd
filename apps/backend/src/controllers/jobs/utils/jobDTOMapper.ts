@@ -298,7 +298,8 @@ export const mapJobMongoToDTO = (job: IJob) => {
         ph: amsJob.ph,
         disulfide: amsJob.disulfide,
         box_padding_nm: amsJob.box_padding_nm,
-        seed: amsJob.seed
+        seed: amsJob.seed,
+        hmr: amsJob.hmr
       } as BilboMDAutoMDSAXSDTO
     }
 

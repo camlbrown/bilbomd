@@ -197,6 +197,7 @@ export interface BilboMDAutoMDSAXSDTO extends BaseJobDTO {
   disulfide?: boolean
   box_padding_nm?: number
   seed?: number
+  hmr?: boolean
 }
 
 export type BilboMDMongoJobDTO =
