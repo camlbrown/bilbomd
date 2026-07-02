@@ -391,7 +391,11 @@ export const createAutoMDSaxsJobHandler = (): JobHandler => ({
         suffix: ' M'
       },
       { label: 'pH', value: j.ph ?? 7 },
-      { label: 'Disulfides', value: j.disulfide ? 'Yes' : 'No' }
+      { label: 'Disulfides', value: j.disulfide ? 'Yes' : 'No' },
+      {
+        label: 'Fast mode (HMR)',
+        value: j.hmr ? 'Yes (4 fs timestep)' : 'No (2 fs timestep)'
+      }
     ]
     if (j.box_padding_nm) {
       props.push({ label: 'Box padding', value: j.box_padding_nm, suffix: ' nm' })

@@ -417,9 +417,7 @@ const NewAutoMDSaxsJobForm = () => {
                         Repartitions mass onto hydrogen atoms so the simulation can
                         take a larger timestep (4 fs instead of 2 fs), running the MD
                         roughly <strong>2× faster</strong> for the same simulated
-                        time. It is a well-established technique with negligible
-                        impact on equilibrium/SAXS ensembles. Leave off for the
-                        conventional 2 fs timestep.
+                        time. Leave off for the conventional 2 fs timestep.
                       </Typography>
                     </Box>
 

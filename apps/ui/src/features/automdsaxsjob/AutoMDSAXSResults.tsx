@@ -91,8 +91,22 @@ const PARAM_LABELS: { key: string; label: string }[] = [
   { key: 'ionicConcentrationM', label: 'Ionic concentration (M)' },
   { key: 'pH', label: 'pH' },
   { key: 'disulfide', label: 'Disulfides' },
-  { key: 'boxPaddingNm', label: 'Box padding (nm)' }
+  { key: 'boxPaddingNm', label: 'Box padding (nm)' },
+  { key: 'timestepFs', label: 'Timestep (fs)' },
+  { key: 'hmr', label: 'Fast mode (HMR)' },
+  { key: 'frameIntervalNs', label: 'Frame interval (ns)' }
 ]
+
+// HMR ('hmr' param, else inferred from a 4 fs timestep) as a Yes/No string.
+const hmrUsed = (params: Record<string, unknown>): boolean =>
+  params.hmr === true || params.timestepFs === 4 || params.timestepFs === 4.0
+
+// Render a parameter value: booleans as Yes/No, HMR annotated with the timestep.
+const fmtParamValue = (key: string, value: unknown): string => {
+  if (key === 'hmr') return value === true ? 'Yes (4 fs)' : 'No (2 fs)'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  return String(value)
+}
 
 const MetricCard = ({ label, value }: { label: string; value: string }) => (
   <Paper
@@ -744,14 +758,20 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
             </Typography>
             <Table size="small">
               <TableBody>
-                {PARAM_LABELS.filter(({ key }) => key in params).map(
-                  ({ key, label }) => (
-                    <TableRow key={key}>
-                      <TableCell sx={{ color: 'text.secondary' }}>{label}</TableCell>
-                      <TableCell>{String(params[key])}</TableCell>
-                    </TableRow>
-                  )
-                )}
+                {PARAM_LABELS.filter(
+                  ({ key }) =>
+                    key in params || (key === 'hmr' && 'timestepFs' in params)
+                ).map(({ key, label }) => (
+                  <TableRow key={key}>
+                    <TableCell sx={{ color: 'text.secondary' }}>{label}</TableCell>
+                    <TableCell>
+                      {fmtParamValue(
+                        key,
+                        key === 'hmr' ? hmrUsed(params) : params[key]
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </Grid>
