@@ -7,14 +7,20 @@ export const AUTOMD_SAXS_STAGES: { key: string; label: string }[] = [
   { key: 'minimize', label: 'Energy minimisation' },
   { key: 'equilibrate', label: 'Equilibration (NVT/NPT)' },
   { key: 'production', label: 'Production MD' },
-  { key: 'extract_frames', label: 'Extracting frames' },
-  { key: 'foxs', label: 'SAXS fitting (FoXS/MultiFoXS)' },
-  { key: 'cluster', label: 'Structural clustering' }
+  { key: 'analyse', label: 'Analysing results' }
 ]
 
-// production_rep1, production_rep2 ... collapse to the 'production' stage.
-const normalize = (stage: string): string =>
-  stage.startsWith('production_rep') ? 'production' : stage
+// The three post-production stages (frame extraction, FoXS/MultiFoXS, and
+// clustering) collapse into a single 'analyse' step to save horizontal space.
+const ANALYSE_STAGES = new Set(['extract_frames', 'foxs', 'cluster'])
+
+// production_rep1, production_rep2 ... collapse to the 'production' stage; the
+// post-processing stages collapse to 'analyse'.
+const normalize = (stage: string): string => {
+  if (stage.startsWith('production_rep')) return 'production'
+  if (ANALYSE_STAGES.has(stage)) return 'analyse'
+  return stage
+}
 
 export const stageLabel = (stage?: string | null): string => {
   if (!stage) return 'Starting…'
