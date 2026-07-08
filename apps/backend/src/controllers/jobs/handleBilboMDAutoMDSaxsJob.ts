@@ -43,6 +43,25 @@ const toOptionalNumber = (value: unknown): number | undefined => {
 const toBoolean = (value: unknown): boolean =>
   value === true || value === 'true' || value === '1'
 
+// Boolean that may be absent; returns the fallback when not provided so
+// server-side defaults (e.g. keep_ions=true) hold.
+const toBooleanOr = (value: unknown, fallback: boolean): boolean =>
+  value === undefined || value === null || value === ''
+    ? fallback
+    : toBoolean(value)
+
+// The form sends objects/arrays as JSON strings (multipart); accept a parsed
+// value or a JSON string, else undefined.
+const toParsed = <T>(value: unknown): T | undefined => {
+  if (value === undefined || value === null || value === '') return undefined
+  if (typeof value !== 'string') return value as T
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return undefined
+  }
+}
+
 const handleBilboMDAutoMDSaxsJob = async (
   req: Request,
   res: Response,
@@ -100,7 +119,12 @@ const handleBilboMDAutoMDSaxsJob = async (
       disulfide: req.body.disulfide,
       box_padding_nm: req.body.box_padding_nm,
       seed: req.body.seed,
-      hmr: req.body.hmr
+      hmr: req.body.hmr,
+      keep_ions: req.body.keep_ions,
+      keep_crystallisation_agents: req.body.keep_crystallisation_agents,
+      ligand_resnames: req.body.ligand_resnames,
+      ligand_smiles: req.body.ligand_smiles,
+      protonation_overrides: req.body.protonation_overrides
     }
 
     try {
@@ -157,6 +181,13 @@ const handleBilboMDAutoMDSaxsJob = async (
       box_padding_nm: toOptionalNumber(req.body.box_padding_nm),
       seed: toOptionalNumber(req.body.seed),
       hmr: toBoolean(req.body.hmr),
+      keep_ions: toBooleanOr(req.body.keep_ions, true),
+      keep_crystallisation_agents: toBoolean(req.body.keep_crystallisation_agents),
+      ligand_resnames: toParsed<string[]>(req.body.ligand_resnames),
+      ligand_smiles: toParsed<Record<string, string>>(req.body.ligand_smiles),
+      protonation_overrides: toParsed<Record<string, string>>(
+        req.body.protonation_overrides
+      ),
       status: 'Submitted',
       time_submitted: new Date(),
       steps,

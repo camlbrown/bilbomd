@@ -78,7 +78,12 @@ const processBilboMDAutoMDSAXSJob = async (MQjob: BullMQJob) => {
       disulfide: foundJob.disulfide,
       boxPaddingNm: foundJob.box_padding_nm,
       seed: foundJob.seed,
-      hmr: foundJob.hmr
+      hmr: foundJob.hmr,
+      keepIons: foundJob.keep_ions,
+      keepCrystallisationAgents: foundJob.keep_crystallisation_agents,
+      ligandResnames: foundJob.ligand_resnames,
+      ligandSmiles: foundJob.ligand_smiles,
+      protonationOverrides: foundJob.protonation_overrides
     })
     const configPath = path.join(workDir, 'automd_saxs_config.json')
     await fs.writeJson(configPath, jobConfig, { spaces: 2 })

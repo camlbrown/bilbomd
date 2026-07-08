@@ -299,7 +299,12 @@ export const mapJobMongoToDTO = (job: IJob) => {
         disulfide: amsJob.disulfide,
         box_padding_nm: amsJob.box_padding_nm,
         seed: amsJob.seed,
-        hmr: amsJob.hmr
+        hmr: amsJob.hmr,
+        keep_ions: amsJob.keep_ions,
+        keep_crystallisation_agents: amsJob.keep_crystallisation_agents,
+        ligand_resnames: amsJob.ligand_resnames,
+        ligand_smiles: amsJob.ligand_smiles,
+        protonation_overrides: amsJob.protonation_overrides
       } as BilboMDAutoMDSAXSDTO
     }
 

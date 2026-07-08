@@ -104,5 +104,12 @@ export const automdSaxsJobSchema = yup.object({
     .typeError('seed must be a number')
     .integer('seed must be an integer')
     .optional(),
-  hmr: yup.boolean().optional()
+  hmr: yup.boolean().optional(),
+  keep_ions: yup.boolean().optional(),
+  keep_crystallisation_agents: yup.boolean().optional(),
+  // Sent as JSON strings from the multipart form; validated after parsing in the
+  // controller, so accept a string or the parsed value here.
+  ligand_resnames: yup.mixed().optional(),
+  ligand_smiles: yup.mixed().optional(),
+  protonation_overrides: yup.mixed().optional()
 })

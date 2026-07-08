@@ -20,6 +20,11 @@ interface IBilboMDAutoMDSAXSJob extends IJob {
   box_padding_nm?: number
   seed?: number
   hmr?: boolean
+  keep_ions?: boolean
+  keep_crystallisation_agents?: boolean
+  ligand_resnames?: string[]
+  ligand_smiles?: Record<string, string>
+  protonation_overrides?: Record<string, string>
 }
 
 export { IBilboMDAutoMDSAXSJob }

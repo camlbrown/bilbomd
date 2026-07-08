@@ -397,7 +397,12 @@ const bilboMdAutoMDSAXSJobSchema = new Schema<IBilboMDAutoMDSAXSJob>({
   disulfide: { type: Boolean, default: false, required: false },
   box_padding_nm: { type: Number, required: false },
   seed: { type: Number, required: false },
-  hmr: { type: Boolean, default: false, required: false }
+  hmr: { type: Boolean, default: false, required: false },
+  keep_ions: { type: Boolean, default: true, required: false },
+  keep_crystallisation_agents: { type: Boolean, default: false, required: false },
+  ligand_resnames: { type: [String], required: false },
+  ligand_smiles: { type: Object, required: false },
+  protonation_overrides: { type: Object, required: false }
 })
 
 jobSchema.index({ uuid: 1 })
