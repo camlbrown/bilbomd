@@ -250,6 +250,39 @@ export interface AutoMDSAXSAnalysis {
   notes?: string[]
 }
 
+// One ionizable residue's protonation decision (prep audit -> review table).
+export interface AutoMDSAXSProtonationChange {
+  chain: string
+  resSeq: string
+  residue: string
+  pKa: number | null
+  variant: string
+  source?: string
+}
+export interface AutoMDSAXSLigandAudit {
+  resname: string
+  nAtoms: number
+  formalCharge: number
+  smiles: string
+  source: string
+}
+// Result of the prep preview (GET /jobs/automd-saxs-prep/:id).
+export interface AutoMDSAXSPrepResult {
+  status: string // 'pending' | 'prepared' | 'error'
+  message?: string
+  protonationMethod?: string
+  protonationChanges?: AutoMDSAXSProtonationChange[]
+  ligands?: AutoMDSAXSLigandAudit[]
+  ligandWarnings?: string[]
+  ions?: Record<string, number>
+  strippedResidues?: Record<string, number>
+  nonstandardResidues?: [string, string][]
+  missingResidues?: Record<string, unknown>
+  boxPaddingNm?: number
+  pH?: number
+  preparedPdb?: string
+}
+
 // AutoMD-SAXS live progress (polled while the job runs).
 export interface AutoMDSAXSRepeatProgress {
   repeat: number
@@ -430,6 +463,20 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: [{ type: 'Job', id: 'LIST' }]
     }),
+    // Task 4 two-step flow: start a prep preview (structure prep only) and poll it.
+    startAutoMDSaxsPrep: builder.mutation<{ previewId: string }, FormData>({
+      query: (form) => ({
+        url: '/jobs/automd-saxs-prep',
+        method: 'POST',
+        body: form
+      })
+    }),
+    getAutoMDSaxsPrep: builder.query<AutoMDSAXSPrepResult, string>({
+      query: (previewId) => ({
+        url: `/jobs/automd-saxs-prep/${previewId}`,
+        method: 'GET'
+      })
+    }),
     addNewMultiJob: builder.mutation<JobCreationResponse, FormData>({
       query: (newJob) => ({
         url: '/jobs/bilbomd-multi',
@@ -586,6 +633,9 @@ export const {
   useAddNewScoperJobMutation,
   useAddNewCarbonaraJobMutation,
   useAddNewAutoMDSaxsJobMutation,
+  useStartAutoMDSaxsPrepMutation,
+  useGetAutoMDSaxsPrepQuery,
+  useLazyGetAutoMDSaxsPrepQuery,
   useAddNewMultiJobMutation,
   useAf2PaeJiffyMutation,
   useGetAf2PaeConstFileQuery,

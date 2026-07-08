@@ -50,6 +50,9 @@ const NewCarbonaraJob = Loadable(
 const NewAutoMDSaxsJob = Loadable(
   lazy(() => import('features/automdsaxsjob/NewAutoMDSaxsJobForm'))
 )
+const AutoMDSaxsReview = Loadable(
+  lazy(() => import('features/automdsaxsjob/AutoMDSAXSReviewPage'))
+)
 const NewMultiJob = Loadable(
   lazy(() => import('features/multimd/NewMultiMDJobForm'))
 )
@@ -204,6 +207,10 @@ const ProtectedMainRoutes = {
                     {
                       path: 'jobs/automd-saxs',
                       element: <NewAutoMDSaxsJob />
+                    },
+                    {
+                      path: 'jobs/automd-saxs/review/:previewId',
+                      element: <AutoMDSaxsReview />
                     },
                     {
                       path: 'jobs/multimd',

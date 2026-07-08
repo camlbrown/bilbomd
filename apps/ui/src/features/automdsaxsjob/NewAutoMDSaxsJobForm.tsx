@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router'
 import {
   Box,
   Button,
@@ -11,12 +12,22 @@ import {
   AccordionSummary,
   AccordionDetails,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
+  Table,
+  TableBody,
+  TableRow,
+  TableCell,
+  Chip
 } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { Form, Formik, Field, FormikHelpers } from 'formik'
 import FileSelect from 'features/jobs/FileSelect'
-import { useAddNewAutoMDSaxsJobMutation } from 'slices/jobsApiSlice'
+import { useStartAutoMDSaxsPrepMutation } from 'slices/jobsApiSlice'
+import AutoMDSAXSStructureViewer from './AutoMDSAXSStructureViewer'
+import {
+  classifyPdbContents,
+  ContentItem
+} from './automdsaxsContents'
 import SendIcon from '@mui/icons-material/Send'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { bilbomdAutoMDSaxsJobSchema } from 'schemas/BilboMDAutoMDSaxsJobSchema'
@@ -24,7 +35,6 @@ import { Debug } from 'components/Debug'
 import LinearProgress from '@mui/material/LinearProgress'
 import HeaderBox from 'components/HeaderBox'
 import useTitle from 'hooks/useTitle'
-import JobSuccessAlert from 'features/jobs/JobSuccessAlert'
 
 interface AutoMDSaxsJobFormValues {
   title: string
@@ -46,11 +56,44 @@ interface AutoMDSaxsJobFormValues {
 
 const NewAutoMDSaxsJobForm = () => {
   useTitle('BilboMD: New AutoMD-SAXS Job')
+  const navigate = useNavigate()
 
-  const [addNewAutoMDSaxsJob, { isSuccess, data: jobResponse }] =
-    useAddNewAutoMDSaxsJobMutation()
+  const [startPrep, { isLoading: isPreparing }] = useStartAutoMDSaxsPrepMutation()
 
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // Client-side inspection of the uploaded PDB for the contents preview.
+  const [pdbText, setPdbText] = useState<string>('')
+  const [contents, setContents] = useState<ContentItem[]>([])
+  // Per-non-protein-residue "keep" choices + per-ligand SMILES hints.
+  const [keep, setKeep] = useState<Record<string, boolean>>({})
+  const [ligandSmiles, setLigandSmiles] = useState<Record<string, string>>({})
+
+  // Read the selected PDB client-side to preview its contents + 3D structure.
+  const handlePdbFileChange = (file: File): void => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = String(reader.result || '')
+      setPdbText(text)
+      const items = classifyPdbContents(text)
+      setContents(items)
+      // Defaults: keep protein + ions + ligands; strip water + agents.
+      const k: Record<string, boolean> = {}
+      for (const it of items) {
+        k[it.resname] =
+          it.category === 'protein' ||
+          it.category === 'ion' ||
+          it.category === 'ligand'
+      }
+      setKeep(k)
+      setLigandSmiles({})
+    }
+    reader.readAsText(file)
+  }
+
+  const ligandItems = contents.filter((c) => c.category === 'ligand')
+  const ionItems = contents.filter((c) => c.category === 'ion')
+  const agentItems = contents.filter((c) => c.category === 'agent')
+  const waterItems = contents.filter((c) => c.category === 'water')
 
   const initialValues: AutoMDSaxsJobFormValues = {
     title: '',
@@ -72,47 +115,60 @@ const NewAutoMDSaxsJobForm = () => {
 
   const onSubmit = async (
     values: AutoMDSaxsJobFormValues,
-    { setStatus }: FormikHelpers<AutoMDSaxsJobFormValues>
+    _helpers: FormikHelpers<AutoMDSaxsJobFormValues>
   ) => {
     setSubmitError(null)
-    const form = new FormData()
-    form.append('bilbomd_mode', 'automd-saxs')
-    form.append('title', values.title)
-    form.append('pdb_file', values.pdb_file)
-    if (values.dat_file) form.append('dat_file', values.dat_file)
-    form.append('system', values.system)
-    form.append('force_field', values.force_field)
-    form.append('water_model', values.water_model)
-    form.append('simulation_time_ns', String(values.simulation_time_ns))
-    form.append('n_repeats', String(values.n_repeats))
-    form.append('ionic_concentration_M', String(values.ionic_concentration_M))
-    form.append('ph', String(values.ph))
-    form.append('temperature_K', String(values.temperature_K))
-    if (values.box_padding_nm !== '')
-      form.append('box_padding_nm', String(values.box_padding_nm))
-    if (values.seed !== '') form.append('seed', String(values.seed))
-    form.append('disulfide', values.disulfide.toString())
-    form.append('hmr', values.hmr.toString())
+    // Kept ligands (by resname) + their optional SMILES hints; kept ions/agents
+    // map to the category-level config booleans.
+    const keptLigands = ligandItems
+      .filter((l) => keep[l.resname])
+      .map((l) => l.resname)
+    const smilesForKept: Record<string, string> = {}
+    for (const r of keptLigands)
+      if (ligandSmiles[r]?.trim()) smilesForKept[r] = ligandSmiles[r].trim()
+    const keepIons = ionItems.some((i) => keep[i.resname])
+    const keepAgents = agentItems.some((a) => keep[a.resname])
+
+    // 1) start a prep preview (structure prep only, no MD)
+    const prepForm = new FormData()
+    prepForm.append('pdb_file', values.pdb_file)
+    prepForm.append('system', values.system)
+    prepForm.append('force_field', values.force_field)
+    prepForm.append('water_model', values.water_model)
+    prepForm.append('ph', String(values.ph))
+    prepForm.append('ionic_concentration_M', String(values.ionic_concentration_M))
+    prepForm.append('disulfide', values.disulfide.toString())
+    prepForm.append('keep_ions', String(keepIons))
+    prepForm.append('keep_crystallisation_agents', String(keepAgents))
+    if (keptLigands.length > 0)
+      prepForm.append('ligand_resnames', JSON.stringify(keptLigands))
+    if (Object.keys(smilesForKept).length > 0)
+      prepForm.append('ligand_smiles', JSON.stringify(smilesForKept))
 
     try {
-      const newJob = await addNewAutoMDSaxsJob(form).unwrap()
-      setStatus(newJob)
+      const { previewId } = await startPrep(prepForm).unwrap()
+      // Carry the full run settings to the review page; it submits the real job.
+      void navigate(`/dashboard/jobs/automd-saxs/review/${previewId}`, {
+        state: {
+          settings: { ...values, pdb_file: undefined },
+          pdbFileName:
+            (values.pdb_file as unknown) instanceof File
+              ? (values.pdb_file as unknown as File).name
+              : '',
+          keepIons,
+          keepAgents,
+          ligandResnames: keptLigands,
+          ligandSmiles: smilesForKept
+        }
+      })
     } catch (error) {
-      console.error('rejected', error)
+      console.error('prep rejected', error)
       setSubmitError(
         (error as { data?: { message?: string } }).data?.message ||
-          'An error occurred during submission.'
+          'Failed to start structure preparation.'
       )
     }
   }
-
-  const successResponse = jobResponse
-    ? {
-        message: jobResponse.message || 'Job submitted successfully',
-        jobid: jobResponse.jobid,
-        uuid: jobResponse.uuid
-      }
-    : undefined
 
   return (
     <Grid
@@ -162,12 +218,16 @@ const NewAutoMDSaxsJobForm = () => {
         </HeaderBox>
 
         <Paper sx={{ p: 2 }}>
-          {isSuccess && successResponse ? (
-            <JobSuccessAlert
-              jobResponse={successResponse}
-              jobType="AutoMD-SAXS"
-            />
-          ) : (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            <strong>Structure preparation is a best-effort automated step.</strong>{' '}
+            No open-source tool protonates or prepares every structure perfectly.
+            This tool tries to be as accurate as possible (propka pH-based
+            protonation, ligand parameterisation, ion retention), but you should{' '}
+            <strong>review the prepared structure</strong> — protonation states,
+            kept/stripped contents, ligands and ions — before running the
+            simulation.
+          </Alert>
+          {
             <Formik
               initialValues={initialValues}
               validationSchema={bilbomdAutoMDSaxsJobSchema}
@@ -226,12 +286,171 @@ const NewAutoMDSaxsJobForm = () => {
                         disabled={isSubmitting}
                         setFieldValue={setFieldValue}
                         setFieldTouched={setFieldTouched}
+                        onFileChange={handlePdbFileChange}
                         error={errors.pdb_file && touched.pdb_file}
                         errorMessage={errors.pdb_file ? errors.pdb_file : ''}
                         fileType="structure *.pdb"
                         fileExt=".pdb"
                       />
                     </Grid>
+
+                    {/* Structure contents preview + keep/strip toggles */}
+                    {contents.length > 0 && (
+                      <Box sx={{ my: 1 }}>
+                        <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                          Structure contents — choose what to keep
+                        </Typography>
+                        <Grid container spacing={2}>
+                          <Grid size={{ xs: 12, md: 6 }}>
+                            <AutoMDSAXSStructureViewer pdbText={pdbText} height={360} />
+                          </Grid>
+                          <Grid size={{ xs: 12, md: 6 }}>
+                            <Table size="small">
+                              <TableBody>
+                                <TableRow>
+                                  <TableCell>
+                                    <strong>Protein</strong>
+                                  </TableCell>
+                                  <TableCell>
+                                    {contents.find((c) => c.category === 'protein')
+                                      ?.count ?? 0}{' '}
+                                    residues (always kept)
+                                  </TableCell>
+                                </TableRow>
+                                {ionItems.length > 0 && (
+                                  <TableRow>
+                                    <TableCell>
+                                      <FormControlLabel
+                                        control={
+                                          <Checkbox
+                                            size="small"
+                                            checked={ionItems.some(
+                                              (i) => keep[i.resname]
+                                            )}
+                                            onChange={(e) =>
+                                              setKeep((k) => {
+                                                const n = { ...k }
+                                                ionItems.forEach(
+                                                  (i) =>
+                                                    (n[i.resname] = e.target.checked)
+                                                )
+                                                return n
+                                              })
+                                            }
+                                          />
+                                        }
+                                        label="Bound ions"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      {ionItems.map((i) => (
+                                        <Chip
+                                          key={i.resname}
+                                          size="small"
+                                          label={`${i.resname} ×${i.count}`}
+                                          sx={{ mr: 0.5 }}
+                                        />
+                                      ))}
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                                {agentItems.length > 0 && (
+                                  <TableRow>
+                                    <TableCell>
+                                      <FormControlLabel
+                                        control={
+                                          <Checkbox
+                                            size="small"
+                                            checked={agentItems.some(
+                                              (a) => keep[a.resname]
+                                            )}
+                                            onChange={(e) =>
+                                              setKeep((k) => {
+                                                const n = { ...k }
+                                                agentItems.forEach(
+                                                  (a) =>
+                                                    (n[a.resname] = e.target.checked)
+                                                )
+                                                return n
+                                              })
+                                            }
+                                          />
+                                        }
+                                        label="Crystallisation agents"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      {agentItems.map((a) => (
+                                        <Chip
+                                          key={a.resname}
+                                          size="small"
+                                          variant="outlined"
+                                          label={`${a.resname} ×${a.count}`}
+                                          sx={{ mr: 0.5 }}
+                                        />
+                                      ))}
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                                {ligandItems.map((lig) => (
+                                  <TableRow key={lig.resname}>
+                                    <TableCell>
+                                      <FormControlLabel
+                                        control={
+                                          <Checkbox
+                                            size="small"
+                                            checked={!!keep[lig.resname]}
+                                            onChange={(e) =>
+                                              setKeep((k) => ({
+                                                ...k,
+                                                [lig.resname]: e.target.checked
+                                              }))
+                                            }
+                                          />
+                                        }
+                                        label={`Ligand ${lig.resname} ×${lig.count}`}
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <TextField
+                                        size="small"
+                                        fullWidth
+                                        placeholder="SMILES (recommended)"
+                                        value={ligandSmiles[lig.resname] || ''}
+                                        disabled={!keep[lig.resname]}
+                                        onChange={(e) =>
+                                          setLigandSmiles((s) => ({
+                                            ...s,
+                                            [lig.resname]: e.target.value
+                                          }))
+                                        }
+                                      />
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                                {waterItems.length > 0 && (
+                                  <TableRow>
+                                    <TableCell>Waters</TableCell>
+                                    <TableCell>
+                                      {waterItems.reduce((n, w) => n + w.count, 0)}{' '}
+                                      removed (re-added as explicit solvent)
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </TableBody>
+                            </Table>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: 'block', mt: 1 }}
+                            >
+                              A ligand without hydrogens needs a SMILES hint to be
+                              parameterised; otherwise it is stripped.
+                            </Typography>
+                          </Grid>
+                        </Grid>
+                      </Box>
+                    )}
 
                     <Grid>
                       <Field
@@ -488,13 +707,13 @@ const NewAutoMDSaxsJobForm = () => {
                           values.title === '' ||
                           values.pdb_file === ''
                         }
-                        loading={isSubmitting}
+                        loading={isSubmitting || isPreparing}
                         endIcon={<SendIcon />}
                         loadingPosition="end"
                         variant="contained"
-                        sx={{ width: '110px' }}
+                        sx={{ width: '190px' }}
                       >
-                        <span>Submit</span>
+                        <span>Prepare structure</span>
                       </Button>
                     </Grid>
                   </Grid>
@@ -502,7 +721,7 @@ const NewAutoMDSaxsJobForm = () => {
                 </Form>
               )}
             </Formik>
-          )}
+          }
         </Paper>
       </Grid>
     </Grid>
