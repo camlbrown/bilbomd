@@ -21,11 +21,13 @@ USER root
 # AutoMD-SAXS source (the build context is the AutoMD-SAXS repo).
 COPY . /opt/automd-saxs
 
-# Install scikit-learn + the automd-saxs CLI into the OpenMM env (which already
-# has openmm, pdbfixer, mdtraj, numpy, scipy). --no-deps for automd-saxs: it has
-# no runtime deps of its own and we don't want pip to disturb the curated env.
-RUN /opt/envs/openmm/bin/pip install --no-cache-dir scikit-learn \
+# Install scikit-learn (CLoNe/PCA), propka (structure-based pH protonation), and
+# the automd-saxs CLI into the OpenMM env (which already has openmm, pdbfixer,
+# mdtraj, numpy, scipy). --no-deps for automd-saxs: it has no runtime deps of its
+# own and we don't want pip to disturb the curated env.
+RUN /opt/envs/openmm/bin/pip install --no-cache-dir scikit-learn propka \
  && /opt/envs/openmm/bin/pip install --no-cache-dir --no-deps /opt/automd-saxs \
- && /opt/envs/openmm/bin/automd-saxs --help >/dev/null
+ && /opt/envs/openmm/bin/automd-saxs --help >/dev/null \
+ && /opt/envs/openmm/bin/propka3 --version >/dev/null 2>&1 || true
 
 ENV AUTOMD_SAXS_BIN=/opt/envs/openmm/bin/automd-saxs
