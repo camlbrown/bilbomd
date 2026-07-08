@@ -135,6 +135,59 @@ export const getAutoMDSaxsPrep = async (
 }
 
 /**
+ * POST /jobs/automd-saxs-prep/:id/reprepare
+ *
+ * Re-runs the prep preview for an existing upload with a new pH and/or manual
+ * protonation overrides (from the review-page table), reusing the already-
+ * uploaded PDB + content settings. Body: { ph?, protonation_overrides? }.
+ */
+export const reprepareAutoMDSaxsPrep = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const rawId = req.params['id']
+  const id = Array.isArray(rawId) ? rawId[0] : rawId
+  if (!id) {
+    res.status(400).json({ message: 'Missing preview id' })
+    return
+  }
+  const previewDir = path.join(uploadFolder, PREP_SUBDIR, id)
+  const configPath = path.join(previewDir, 'prep_config.json')
+  const auditPath = path.join(previewDir, 'prep_audit.json')
+  try {
+    if (!(await fs.pathExists(configPath))) {
+      res.status(404).json({ message: 'No prior prep to re-run' })
+      return
+    }
+    const prior = await fs.readJson(configPath)
+    const data: AutoMDSaxsPrepJobData = {
+      previewId: id,
+      pdbFile: path.basename(String(prior.pdb || '')),
+      system: prior.system,
+      forceField: prior.force_field,
+      waterModel: prior.water_model,
+      ph: req.body?.ph !== undefined ? Number(req.body.ph) : prior.ph,
+      ionicConcentrationM: prior.ionic_concentration_M,
+      disulfide: prior.disulfide,
+      keepIons: prior.keep_ions,
+      keepCrystallisationAgents: prior.keep_crystallisation_agents,
+      ligandResnames: prior.ligand_resnames,
+      ligandSmiles: prior.ligand_smiles,
+      protonationOverrides:
+        req.body?.protonation_overrides ?? prior.protonation_overrides
+    }
+    // Remove the old audit so the UI's poll shows 'pending' until the re-run
+    // finishes.
+    await fs.remove(auditPath).catch(() => undefined)
+    await queueAutoMDSaxsPrep(data)
+    res.status(202).json({ previewId: id })
+  } catch (error) {
+    logger.error(`reprepareAutoMDSaxsPrep ${id}: ${String(error)}`)
+    res.status(500).json({ message: 'Failed to re-run prep' })
+  }
+}
+
+/**
  * GET /jobs/automd-saxs-prep/:id/prepared
  *
  * Serves the prepared.pdb (protein + H + kept ligands/ions) for the review 3D

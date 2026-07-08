@@ -150,11 +150,10 @@ const NewAutoMDSaxsJobForm = () => {
       // Carry the full run settings to the review page; it submits the real job.
       void navigate(`/dashboard/jobs/automd-saxs/review/${previewId}`, {
         state: {
+          // The File is structured-cloneable, so it survives in-session router
+          // state (used by the review page's "Run MD" to submit the real job).
+          pdbFile: values.pdb_file,
           settings: { ...values, pdb_file: undefined },
-          pdbFileName:
-            (values.pdb_file as unknown) instanceof File
-              ? (values.pdb_file as unknown as File).name
-              : '',
           keepIons,
           keepAgents,
           ligandResnames: keptLigands,

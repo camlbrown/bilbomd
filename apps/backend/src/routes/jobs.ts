@@ -18,7 +18,8 @@ import {
 import {
   createAutoMDSaxsPrep,
   getAutoMDSaxsPrep,
-  getAutoMDSaxsPreparedPdb
+  getAutoMDSaxsPreparedPdb,
+  reprepareAutoMDSaxsPrep
 } from '../controllers/jobs/automdSaxsPrepController.js'
 import {
   createCarbonaraInitFoxs,
@@ -79,6 +80,7 @@ router.route('/carbonara-autoflex/:id').get(getCarbonaraAutoFlex)
 // before the generic '/:id' and '/:id/:filename' routes.
 router.route('/automd-saxs-prep').post(createAutoMDSaxsPrep)
 router.route('/automd-saxs-prep/:id').get(getAutoMDSaxsPrep)
+router.route('/automd-saxs-prep/:id/reprepare').post(reprepareAutoMDSaxsPrep)
 router.route('/automd-saxs-prep/:id/prepared').get(getAutoMDSaxsPreparedPdb)
 
 router.route('/:id').get(getJobById)

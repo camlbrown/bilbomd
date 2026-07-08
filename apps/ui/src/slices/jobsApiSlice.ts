@@ -266,12 +266,24 @@ export interface AutoMDSAXSLigandAudit {
   smiles: string
   source: string
 }
+// One ionizable residue in the editable protonation table (review page).
+export interface AutoMDSAXSProtonationRow {
+  key: string // "chain:resSeq:resname"
+  chain: string
+  resSeq: string
+  residue: string
+  pKa: number | null
+  state: string // current variant or 'default'
+  source: string // 'propka' | 'override'
+  choices: string[]
+}
 // Result of the prep preview (GET /jobs/automd-saxs-prep/:id).
 export interface AutoMDSAXSPrepResult {
   status: string // 'pending' | 'prepared' | 'error'
   message?: string
   protonationMethod?: string
   protonationChanges?: AutoMDSAXSProtonationChange[]
+  protonationTable?: AutoMDSAXSProtonationRow[]
   ligands?: AutoMDSAXSLigandAudit[]
   ligandWarnings?: string[]
   ions?: Record<string, number>
@@ -477,6 +489,16 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
         method: 'GET'
       })
     }),
+    reprepareAutoMDSaxs: builder.mutation<
+      { previewId: string },
+      { previewId: string; ph?: number; protonation_overrides?: Record<string, string> }
+    >({
+      query: ({ previewId, ...body }) => ({
+        url: `/jobs/automd-saxs-prep/${previewId}/reprepare`,
+        method: 'POST',
+        body
+      })
+    }),
     addNewMultiJob: builder.mutation<JobCreationResponse, FormData>({
       query: (newJob) => ({
         url: '/jobs/bilbomd-multi',
@@ -636,6 +658,7 @@ export const {
   useStartAutoMDSaxsPrepMutation,
   useGetAutoMDSaxsPrepQuery,
   useLazyGetAutoMDSaxsPrepQuery,
+  useReprepareAutoMDSaxsMutation,
   useAddNewMultiJobMutation,
   useAf2PaeJiffyMutation,
   useGetAf2PaeConstFileQuery,
