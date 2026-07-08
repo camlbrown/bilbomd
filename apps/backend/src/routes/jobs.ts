@@ -16,6 +16,11 @@ import {
   getAutoMDSAXSTrajectory
 } from '../controllers/jobs/automdSaxsAnalysisController.js'
 import {
+  createAutoMDSaxsPrep,
+  getAutoMDSaxsPrep,
+  getAutoMDSaxsPreparedPdb
+} from '../controllers/jobs/automdSaxsPrepController.js'
+import {
   createCarbonaraInitFoxs,
   getCarbonaraInitFoxs
 } from '../controllers/jobs/carbonaraInitFoxsController.js'
@@ -69,6 +74,12 @@ router.route('/carbonara-initfoxs/:id').get(getCarbonaraInitFoxs)
 // MUST be registered before the generic '/:id' and '/:id/:filename' routes.
 router.route('/carbonara-autoflex').post(createCarbonaraAutoFlex)
 router.route('/carbonara-autoflex/:id').get(getCarbonaraAutoFlex)
+
+// AutoMD-SAXS prep preview (Task 4 — preview queue, no Mongo model). MUST be
+// before the generic '/:id' and '/:id/:filename' routes.
+router.route('/automd-saxs-prep').post(createAutoMDSaxsPrep)
+router.route('/automd-saxs-prep/:id').get(getAutoMDSaxsPrep)
+router.route('/automd-saxs-prep/:id/prepared').get(getAutoMDSaxsPreparedPdb)
 
 router.route('/:id').get(getJobById)
 router.route('/:id').delete(deleteJob)

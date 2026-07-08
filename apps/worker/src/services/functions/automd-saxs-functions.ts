@@ -33,6 +33,12 @@ export interface AutoMDSaxsConfigOptions {
   boxPaddingNm?: number
   seed?: number
   hmr?: boolean
+  // Structure-content + protonation controls (Task 2/3/4).
+  keepIons?: boolean
+  keepCrystallisationAgents?: boolean
+  ligandResnames?: string[]
+  ligandSmiles?: Record<string, string>
+  protonationOverrides?: Record<string, string>
 }
 
 /**
@@ -60,6 +66,15 @@ export const buildAutoMDSaxsConfig = (
   if (opts.boxPaddingNm !== undefined) config.box_padding_nm = opts.boxPaddingNm
   if (opts.seed !== undefined) config.seed = opts.seed
   if (opts.hmr !== undefined) config.hmr = opts.hmr
+  if (opts.keepIons !== undefined) config.keep_ions = opts.keepIons
+  if (opts.keepCrystallisationAgents !== undefined)
+    config.keep_crystallisation_agents = opts.keepCrystallisationAgents
+  if (opts.ligandResnames && opts.ligandResnames.length > 0)
+    config.ligand_resnames = opts.ligandResnames
+  if (opts.ligandSmiles && Object.keys(opts.ligandSmiles).length > 0)
+    config.ligand_smiles = opts.ligandSmiles
+  if (opts.protonationOverrides && Object.keys(opts.protonationOverrides).length > 0)
+    config.protonation_overrides = opts.protonationOverrides
   return config
 }
 
@@ -68,6 +83,12 @@ export const buildAutoMDSaxsArgs = (opts: {
   configPath: string
   outDir: string
 }): string[] => ['run', '--config', opts.configPath, '--out', opts.outDir]
+
+/** argv for `automd-saxs prepare --config <configPath> --out <outDir>` (prep preview). */
+export const buildAutoMDSaxsPrepArgs = (opts: {
+  configPath: string
+  outDir: string
+}): string[] => ['prepare', '--config', opts.configPath, '--out', opts.outDir]
 
 export interface RunAutoMDSaxsOptions {
   bin: string

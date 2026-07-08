@@ -14,6 +14,7 @@ import { createBilboMdWorker } from './workers/bilboMdWorker.js'
 import { createMovieWorker } from './workers/movieWorker.js'
 import { createMultiMDWorker } from './workers/multiMdWorker.js'
 import { createCarbonaraPreviewWorker } from './workers/carbonaraPreviewWorker.js'
+import { createAutoMDSaxsPrepWorker } from './workers/automdSaxsPrepWorker.js'
 import { createCarbonaraAutoFlexWorker } from './workers/carbonaraAutoFlexWorker.js'
 import { checkNERSC } from './workers/workerControl.js'
 import { monitorAndCleanupJobs } from './workers/bilboMdNerscJobMonitor.js'
@@ -38,6 +39,7 @@ let bilboMdWorker: Worker | null = null
 let movieWorker: Worker | null = null
 let multimdWorker: Worker | null = null
 let carbonaraPreviewWorker: Worker | null = null
+let automdSaxsPrepWorker: Worker | null = null
 let carbonaraAutoFlexWorker: Worker | null = null
 
 const workerOptions: WorkerOptions = {
@@ -69,6 +71,11 @@ const carbonaraAutoFlexWorkerOptions: WorkerOptions = {
   concurrency: config.carbonara.autoFlexConcurrency
 }
 
+const automdSaxsPrepWorkerOptions: WorkerOptions = {
+  connection: redis,
+  concurrency: 2
+}
+
 const startWorkers = async () => {
   const systemName = config.runOnNERSC ? 'NERSC' : 'Hyperion/Epyc'
   logger.info(`Attempting to start workers on ${systemName}...`)
@@ -79,7 +86,8 @@ const startWorkers = async () => {
     !movieWorker ||
     !multimdWorker ||
     !carbonaraPreviewWorker ||
-    !carbonaraAutoFlexWorker
+    !carbonaraAutoFlexWorker ||
+    !automdSaxsPrepWorker
   ) {
     // If running on NERSC, check credentials before starting workers
     if (config.runOnNERSC) {
@@ -111,6 +119,9 @@ const startWorkers = async () => {
       carbonaraAutoFlexWorkerOptions
     )
     logger.info(`Carbonara AutoFlex Worker started on ${systemName}`)
+
+    automdSaxsPrepWorker = createAutoMDSaxsPrepWorker(automdSaxsPrepWorkerOptions)
+    logger.info(`AutoMD-SAXS Prep Worker started on ${systemName}`)
   } else {
     logger.info('Workers are already initialized')
   }
@@ -125,7 +136,8 @@ const workers = [
   {
     getWorker: () => carbonaraAutoFlexWorker,
     name: 'Carbonara AutoFlex Worker'
-  }
+  },
+  { getWorker: () => automdSaxsPrepWorker, name: 'AutoMD-SAXS Prep Worker' }
 ]
 
 // Store interval IDs for cleanup
@@ -208,6 +220,10 @@ const gracefulShutdown = async (signal: string) => {
     if (carbonaraPreviewWorker) {
       await carbonaraPreviewWorker.close()
       logger.info('Carbonara Preview Worker closed')
+    }
+    if (automdSaxsPrepWorker) {
+      await automdSaxsPrepWorker.close()
+      logger.info('AutoMD-SAXS Prep Worker closed')
     }
   } catch (error) {
     logger.error(`Error closing workers: ${getErrorMessage(error)}`)
