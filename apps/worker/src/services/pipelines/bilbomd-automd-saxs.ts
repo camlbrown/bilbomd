@@ -81,6 +81,7 @@ const processBilboMDAutoMDSAXSJob = async (MQjob: BullMQJob) => {
       hmr: foundJob.hmr,
       keepIons: foundJob.keep_ions,
       keepCrystallisationAgents: foundJob.keep_crystallisation_agents,
+      keepWaters: foundJob.keep_waters,
       ligandResnames: foundJob.ligand_resnames,
       ligandSmiles: foundJob.ligand_smiles,
       protonationOverrides: foundJob.protonation_overrides

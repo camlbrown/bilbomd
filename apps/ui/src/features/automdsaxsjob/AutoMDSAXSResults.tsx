@@ -225,10 +225,14 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
   const tsData = pivotByRepeat(
     timeSeries as unknown as Record<string, unknown>[],
     'timeNs',
-    ['rg', 'rmsd', 'sasa', 'hbonds', 'energy']
+    ['rg', 'rmsd', 'sasa', 'hbonds', 'energy', 'ligandRmsd', 'ligandContacts']
   )
   const hasHbonds = timeSeries.some((t) => typeof t.hbonds === 'number')
   const hasEnergy = timeSeries.some((t) => typeof t.energy === 'number')
+  const hasLigandRmsd = timeSeries.some((t) => typeof t.ligandRmsd === 'number')
+  const hasLigandContacts = timeSeries.some(
+    (t) => typeof t.ligandContacts === 'number'
+  )
   // chi2 colour scale for the PCA scatter
   const chi2vals = pca.map((p) => p.chi2).filter((c): c is number => c != null)
   const chi2min = chi2vals.length ? Math.min(...chi2vals) : 0
@@ -723,6 +727,18 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
               <TimeSeriesChart metric="sasa" label="SASA (nm²)" />
               {hasHbonds && (
                 <TimeSeriesChart metric="hbonds" label="Solute H-bond count" />
+              )}
+              {hasLigandRmsd && (
+                <TimeSeriesChart
+                  metric="ligandRmsd"
+                  label="Ligand RMSD (Å, protein-aligned)"
+                />
+              )}
+              {hasLigandContacts && (
+                <TimeSeriesChart
+                  metric="ligandContacts"
+                  label="Protein–ligand contacts (atoms < 4 Å)"
+                />
               )}
               {hasEnergy && (
                 <TimeSeriesChart metric="energy" label="Total energy (kJ/mol)" />

@@ -55,6 +55,34 @@ const AutoMDSAXSStructureViewer = ({ pdbText, url, height = 420 }: Props) => {
       const raw = await plugin.builders.data.rawData({ data, label: 'structure' })
       const trajectory = await plugin.builders.structure.parseTrajectory(raw, 'pdb')
       await plugin.builders.structure.hierarchy.applyPreset(trajectory, 'default')
+
+      // Enlarge ions: after the default preset renders, add a spacefill sphere
+      // to the ion component so bound ions read as large spheres (the default
+      // preset draws them as small ball-and-stick). Uses only the plugin API —
+      // NO molstar sub-path imports (importing e.g. mol-plugin/behavior/static/*
+      // fragments molstar's Vite optimization and breaks plugin init). Wrapped so
+      // it can never prevent the base render.
+      try {
+        const struct =
+          plugin.managers.structure.hierarchy.current.structures[0]
+        for (const comp of struct?.components ?? []) {
+          const params = comp.cell.transform.params as
+            | { type?: { params?: unknown } }
+            | undefined
+          if (params?.type?.params === 'ion') {
+            await plugin.builders.structure.representation.addRepresentation(
+              comp.cell,
+              {
+                type: 'spacefill',
+                typeParams: { sizeFactor: 0.375 },
+                color: 'element-symbol'
+              }
+            )
+          }
+        }
+      } catch {
+        // ion styling is optional; the default preset render stands
+      }
     } catch (err) {
       setError(
         `Could not display the structure: ${

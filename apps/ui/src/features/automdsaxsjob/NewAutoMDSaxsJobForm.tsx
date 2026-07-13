@@ -128,6 +128,7 @@ const NewAutoMDSaxsJobForm = () => {
       if (ligandSmiles[r]?.trim()) smilesForKept[r] = ligandSmiles[r].trim()
     const keepIons = ionItems.some((i) => keep[i.resname])
     const keepAgents = agentItems.some((a) => keep[a.resname])
+    const keepWaters = waterItems.some((w) => keep[w.resname])
 
     // 1) start a prep preview (structure prep only, no MD)
     const prepForm = new FormData()
@@ -140,6 +141,7 @@ const NewAutoMDSaxsJobForm = () => {
     prepForm.append('disulfide', values.disulfide.toString())
     prepForm.append('keep_ions', String(keepIons))
     prepForm.append('keep_crystallisation_agents', String(keepAgents))
+    prepForm.append('keep_waters', String(keepWaters))
     if (keptLigands.length > 0)
       prepForm.append('ligand_resnames', JSON.stringify(keptLigands))
     if (Object.keys(smilesForKept).length > 0)
@@ -156,6 +158,7 @@ const NewAutoMDSaxsJobForm = () => {
           settings: { ...values, pdb_file: undefined },
           keepIons,
           keepAgents,
+          keepWaters,
           ligandResnames: keptLigands,
           ligandSmiles: smilesForKept
         }
@@ -199,7 +202,7 @@ const NewAutoMDSaxsJobForm = () => {
           </AccordionSummary>
           <AccordionDetails>
             <Typography sx={{ m: 1 }}>
-              AutoMD-SAXS is a higher-accuracy, explicit-solvent all-atom
+              AutoMD-SAXS is an explicit-solvent all-atom
               molecular dynamics refinement pipeline (OpenMM) with optional
               SAXS fitting (FoXS/MultiFoXS). Upload a PDB structure and,
               optionally, an experimental SAXS <b>.dat</b> file. The structure is
@@ -219,11 +222,8 @@ const NewAutoMDSaxsJobForm = () => {
         <Paper sx={{ p: 2 }}>
           <Alert severity="info" sx={{ mb: 2 }}>
             <strong>Structure preparation is a best-effort automated step.</strong>{' '}
-            No open-source tool protonates or prepares every structure perfectly.
-            This tool tries to be as accurate as possible (propka pH-based
-            protonation, ligand parameterisation, ion retention), but you should{' '}
-            <strong>review the prepared structure</strong> — protonation states,
-            kept/stripped contents, ligands and ions — before running the
+            Please <strong>review the prepared structure</strong> — protonation
+            states, kept/stripped contents, ligands and ions — before running the
             simulation.
           </Alert>
           {
@@ -301,7 +301,10 @@ const NewAutoMDSaxsJobForm = () => {
                         </Typography>
                         <Grid container spacing={2}>
                           <Grid size={{ xs: 12, md: 6 }}>
-                            <AutoMDSAXSStructureViewer pdbText={pdbText} height={360} />
+                            <AutoMDSAXSStructureViewer
+                              pdbText={pdbText}
+                              height={360}
+                            />
                           </Grid>
                           <Grid size={{ xs: 12, md: 6 }}>
                             <Table size="small">
@@ -429,10 +432,35 @@ const NewAutoMDSaxsJobForm = () => {
                                 ))}
                                 {waterItems.length > 0 && (
                                   <TableRow>
-                                    <TableCell>Waters</TableCell>
+                                    <TableCell>
+                                      <FormControlLabel
+                                        control={
+                                          <Checkbox
+                                            size="small"
+                                            checked={waterItems.some(
+                                              (w) => keep[w.resname]
+                                            )}
+                                            onChange={(e) =>
+                                              setKeep((k) => {
+                                                const n = { ...k }
+                                                waterItems.forEach(
+                                                  (w) =>
+                                                    (n[w.resname] = e.target.checked)
+                                                )
+                                                return n
+                                              })
+                                            }
+                                          />
+                                        }
+                                        label="Crystallographic waters"
+                                      />
+                                    </TableCell>
                                     <TableCell>
                                       {waterItems.reduce((n, w) => n + w.count, 0)}{' '}
-                                      removed (re-added as explicit solvent)
+                                      waters —{' '}
+                                      {waterItems.some((w) => keep[w.resname])
+                                        ? 'kept (bulk solvent added around them)'
+                                        : 'removed (re-added as explicit solvent)'}
                                     </TableCell>
                                   </TableRow>
                                 )}

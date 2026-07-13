@@ -36,6 +36,7 @@ export interface AutoMDSaxsConfigOptions {
   // Structure-content + protonation controls (Task 2/3/4).
   keepIons?: boolean
   keepCrystallisationAgents?: boolean
+  keepWaters?: boolean
   ligandResnames?: string[]
   ligandSmiles?: Record<string, string>
   protonationOverrides?: Record<string, string>
@@ -69,6 +70,7 @@ export const buildAutoMDSaxsConfig = (
   if (opts.keepIons !== undefined) config.keep_ions = opts.keepIons
   if (opts.keepCrystallisationAgents !== undefined)
     config.keep_crystallisation_agents = opts.keepCrystallisationAgents
+  if (opts.keepWaters !== undefined) config.keep_waters = opts.keepWaters
   if (opts.ligandResnames && opts.ligandResnames.length > 0)
     config.ligand_resnames = opts.ligandResnames
   if (opts.ligandSmiles && Object.keys(opts.ligandSmiles).length > 0)

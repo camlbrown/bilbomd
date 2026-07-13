@@ -31,6 +31,7 @@ interface ReviewState {
   settings?: Record<string, unknown>
   keepIons?: boolean
   keepAgents?: boolean
+  keepWaters?: boolean
   ligandResnames?: string[]
   ligandSmiles?: Record<string, string>
 }
@@ -107,6 +108,7 @@ const AutoMDSAXSReviewPage = () => {
       'keep_crystallisation_agents',
       String(state.keepAgents ?? false)
     )
+    form.append('keep_waters', String(state.keepWaters ?? false))
     if (state.ligandResnames && state.ligandResnames.length > 0)
       form.append('ligand_resnames', JSON.stringify(state.ligandResnames))
     if (state.ligandSmiles && Object.keys(state.ligandSmiles).length > 0)

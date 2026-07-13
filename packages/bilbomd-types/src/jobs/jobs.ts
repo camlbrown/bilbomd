@@ -201,6 +201,7 @@ export interface BilboMDAutoMDSAXSDTO extends BaseJobDTO {
   // Structure-content + protonation controls (Task 2/3/4 setup UI).
   keep_ions?: boolean
   keep_crystallisation_agents?: boolean
+  keep_waters?: boolean
   ligand_resnames?: string[]
   ligand_smiles?: Record<string, string>
   protonation_overrides?: Record<string, string>

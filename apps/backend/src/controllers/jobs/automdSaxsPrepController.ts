@@ -79,6 +79,7 @@ export const createAutoMDSaxsPrep = async (
           disulfide: toBool(req.body?.disulfide),
           keepIons: toBool(req.body?.keep_ions),
           keepCrystallisationAgents: toBool(req.body?.keep_crystallisation_agents),
+          keepWaters: toBool(req.body?.keep_waters),
           ligandResnames: toJson<string[]>(req.body?.ligand_resnames),
           ligandSmiles: toJson<Record<string, string>>(req.body?.ligand_smiles),
           protonationOverrides: toJson<Record<string, string>>(
@@ -171,6 +172,7 @@ export const reprepareAutoMDSaxsPrep = async (
       disulfide: prior.disulfide,
       keepIons: prior.keep_ions,
       keepCrystallisationAgents: prior.keep_crystallisation_agents,
+      keepWaters: prior.keep_waters,
       ligandResnames: prior.ligand_resnames,
       ligandSmiles: prior.ligand_smiles,
       protonationOverrides:

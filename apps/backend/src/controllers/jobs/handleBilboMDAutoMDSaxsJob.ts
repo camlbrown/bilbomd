@@ -122,6 +122,7 @@ const handleBilboMDAutoMDSaxsJob = async (
       hmr: req.body.hmr,
       keep_ions: req.body.keep_ions,
       keep_crystallisation_agents: req.body.keep_crystallisation_agents,
+      keep_waters: req.body.keep_waters,
       ligand_resnames: req.body.ligand_resnames,
       ligand_smiles: req.body.ligand_smiles,
       protonation_overrides: req.body.protonation_overrides
@@ -183,6 +184,7 @@ const handleBilboMDAutoMDSaxsJob = async (
       hmr: toBoolean(req.body.hmr),
       keep_ions: toBooleanOr(req.body.keep_ions, true),
       keep_crystallisation_agents: toBoolean(req.body.keep_crystallisation_agents),
+      keep_waters: toBoolean(req.body.keep_waters),
       ligand_resnames: toParsed<string[]>(req.body.ligand_resnames),
       ligand_smiles: toParsed<Record<string, string>>(req.body.ligand_smiles),
       protonation_overrides: toParsed<Record<string, string>>(

@@ -20,6 +20,7 @@ export interface AutoMDSaxsPrepJobData {
   disulfide?: boolean
   keepIons?: boolean
   keepCrystallisationAgents?: boolean
+  keepWaters?: boolean
   ligandResnames?: string[]
   ligandSmiles?: Record<string, string>
   protonationOverrides?: Record<string, string>
@@ -69,6 +70,7 @@ export const processAutoMDSaxsPrep = async (
       disulfide: d.disulfide,
       keepIons: d.keepIons,
       keepCrystallisationAgents: d.keepCrystallisationAgents,
+      keepWaters: d.keepWaters,
       ligandResnames: d.ligandResnames,
       ligandSmiles: d.ligandSmiles,
       protonationOverrides: d.protonationOverrides
