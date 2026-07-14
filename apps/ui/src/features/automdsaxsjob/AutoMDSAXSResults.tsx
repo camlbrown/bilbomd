@@ -35,6 +35,7 @@ import InitialFitChart from '../carbonarajob/InitialFitChart'
 import type {
   AutoMDSAXSPerFrame,
   AutoMDSAXSTimePoint,
+  AutoMDSAXSLigandRmsf,
   AutoMDSAXSPcaPoint,
   AutoMDSAXSClustering,
   AutoMDSAXSMultiFoxs
@@ -184,6 +185,29 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
     ? params.timeSeries
     : []
   const pca: AutoMDSAXSPcaPoint[] = Array.isArray(params.pca) ? params.pca : []
+  const ligandRmsf: AutoMDSAXSLigandRmsf[] = Array.isArray(params.ligandRmsf)
+    ? params.ligandRmsf
+    : []
+  // Distinct bound-ligand instances that have RMSF data (one chart each).
+  const rmsfLigands = Array.from(new Set(ligandRmsf.map((e) => e.ligand)))
+  // Per-ligand chart rows: x = atom index, one rmsf_<repeat> column per repeat.
+  const rmsfRows = (ligand: string): Record<string, number | string>[] => {
+    const entries = ligandRmsf.filter((e) => e.ligand === ligand)
+    const nAtoms = Math.max(0, ...entries.map((e) => e.atoms.length))
+    const rows: Record<string, number | string>[] = []
+    for (let i = 0; i < nAtoms; i++) {
+      const row: Record<string, number | string> = {
+        x: i,
+        name: entries[0]?.atoms[i]?.name ?? String(i)
+      }
+      entries.forEach((e) => {
+        const atom = e.atoms[i]
+        if (atom) row[`rmsf_${e.repeat}`] = atom.rmsf
+      })
+      rows.push(row)
+    }
+    return rows
+  }
   const clusterings: AutoMDSAXSClustering[] = Array.isArray(params.clusterings)
     ? params.clusterings
     : []
@@ -343,6 +367,45 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
               name={`Rep ${r}`}
               stroke={REPEAT_COLORS[(r - 1) % REPEAT_COLORS.length]}
               dot={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </Box>
+  )
+
+  // Per-atom RMSF for one bound ligand (x = ligand atom index, one line/repeat).
+  const LigandRmsfChart = ({ ligand }: { ligand: string }) => (
+    <Box sx={{ my: 1 }}>
+      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+        Ligand RMSF — {ligand} (Å per atom)
+      </Typography>
+      <ResponsiveContainer width="100%" height={200}>
+        <LineChart
+          data={rmsfRows(ligand)}
+          margin={{ top: 5, right: 20, left: 5, bottom: 5 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis
+            dataKey="x"
+            label={{
+              value: 'ligand atom index',
+              position: 'insideBottom',
+              offset: -2
+            }}
+          />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          {activeRepeats.map((r) => (
+            <Line
+              key={r}
+              type="monotone"
+              dataKey={`rmsf_${r}`}
+              name={`Rep ${r}`}
+              stroke={REPEAT_COLORS[(r - 1) % REPEAT_COLORS.length]}
+              dot={false}
+              connectNulls
             />
           ))}
         </LineChart>
@@ -742,6 +805,16 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
               )}
               {hasEnergy && (
                 <TimeSeriesChart metric="energy" label="Total energy (kJ/mol)" />
+              )}
+              {rmsfLigands.length > 0 && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Ligand flexibility (per-atom RMSF)
+                  </Typography>
+                  {rmsfLigands.map((lig) => (
+                    <LigandRmsfChart key={lig} ligand={lig} />
+                  ))}
+                </Box>
               )}
             </Box>
           ) : (

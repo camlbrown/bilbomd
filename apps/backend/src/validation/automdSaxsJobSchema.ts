@@ -110,6 +110,7 @@ export const automdSaxsJobSchema = yup.object({
   keep_waters: yup.boolean().optional(),
   // Sent as JSON strings from the multipart form; validated after parsing in the
   // controller, so accept a string or the parsed value here.
+  ion_resnames: yup.mixed().optional(),
   ligand_resnames: yup.mixed().optional(),
   ligand_smiles: yup.mixed().optional(),
   protonation_overrides: yup.mixed().optional()

@@ -303,6 +303,7 @@ export const mapJobMongoToDTO = (job: IJob) => {
         keep_ions: amsJob.keep_ions,
         keep_crystallisation_agents: amsJob.keep_crystallisation_agents,
         keep_waters: amsJob.keep_waters,
+        ion_resnames: amsJob.ion_resnames,
         ligand_resnames: amsJob.ligand_resnames,
         ligand_smiles: amsJob.ligand_smiles,
         protonation_overrides: amsJob.protonation_overrides

@@ -401,6 +401,7 @@ const bilboMdAutoMDSAXSJobSchema = new Schema<IBilboMDAutoMDSAXSJob>({
   keep_ions: { type: Boolean, default: true, required: false },
   keep_crystallisation_agents: { type: Boolean, default: false, required: false },
   keep_waters: { type: Boolean, default: false, required: false },
+  ion_resnames: { type: [String], required: false },
   ligand_resnames: { type: [String], required: false },
   ligand_smiles: { type: Object, required: false },
   protonation_overrides: { type: Object, required: false }

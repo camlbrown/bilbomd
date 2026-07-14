@@ -10,6 +10,16 @@ interface Props {
   jobId: string
 }
 
+// Human-readable "time remaining" from seconds, or null if unknown.
+const formatEta = (s?: number | null): string | null => {
+  if (s == null || !Number.isFinite(s) || s <= 0) return null
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (h > 0) return `~${h}h ${m}m left`
+  if (m > 0) return `~${m}m left`
+  return '~<1m left'
+}
+
 // Live per-stage + per-repeat MD progress, polled every 10 s while the job runs.
 const AutoMDSAXSLiveProgress = ({ jobId }: Props) => {
   const { data, isLoading } = useGetAutoMDSAXSLiveProgressQuery(jobId, {
@@ -44,6 +54,13 @@ const AutoMDSAXSLiveProgress = ({ jobId }: Props) => {
           color="primary"
           label={stageLabel(data.stage)}
         />
+        {formatEta(data.etaSeconds) && (
+          <Chip
+            size="small"
+            variant="outlined"
+            label={formatEta(data.etaSeconds)}
+          />
+        )}
       </Box>
 
       {/* Pipeline stage stepper */}
@@ -94,6 +111,7 @@ const AutoMDSAXSLiveProgress = ({ jobId }: Props) => {
                     {r.stepTotal > 0
                       ? ` (${r.stepDone.toLocaleString()} / ${r.stepTotal.toLocaleString()} steps)`
                       : ''}
+                    {formatEta(r.etaSeconds) ? ` · ${formatEta(r.etaSeconds)}` : ''}
                   </Typography>
                 </Box>
                 <LinearProgress

@@ -23,6 +23,7 @@ interface IBilboMDAutoMDSAXSJob extends IJob {
   keep_ions?: boolean
   keep_crystallisation_agents?: boolean
   keep_waters?: boolean
+  ion_resnames?: string[]
   ligand_resnames?: string[]
   ligand_smiles?: Record<string, string>
   protonation_overrides?: Record<string, string>

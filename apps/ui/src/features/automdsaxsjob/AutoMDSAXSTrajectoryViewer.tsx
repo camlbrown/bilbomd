@@ -80,6 +80,32 @@ const AutoMDSAXSTrajectoryViewer = ({
         trajectory,
         'default'
       )
+
+      // Enlarge ions to match the setup viewer: the default preset draws them as
+      // small ball-and-stick, so add a spacefill sphere (sizeFactor 0.375) to the
+      // ion component. Plugin API only (no molstar sub-path imports); best-effort
+      // so it can never break the movie.
+      try {
+        const struct =
+          plugin.managers.structure.hierarchy.current.structures[0]
+        for (const comp of struct?.components ?? []) {
+          const params = comp.cell.transform.params as
+            | { type?: { params?: unknown } }
+            | undefined
+          if (params?.type?.params === 'ion') {
+            await plugin.builders.structure.representation.addRepresentation(
+              comp.cell,
+              {
+                type: 'spacefill',
+                typeParams: { sizeFactor: 0.375 },
+                color: 'element-symbol'
+              }
+            )
+          }
+        }
+      } catch {
+        // ion styling is optional; the movie still plays
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(`Could not load trajectory for repeat ${rep}: ${msg}`)

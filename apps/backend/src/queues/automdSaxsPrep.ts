@@ -14,6 +14,7 @@ export interface AutoMDSaxsPrepJobData {
   keepIons?: boolean
   keepCrystallisationAgents?: boolean
   keepWaters?: boolean
+  ionResnames?: string[]
   ligandResnames?: string[]
   ligandSmiles?: Record<string, string>
   protonationOverrides?: Record<string, string>

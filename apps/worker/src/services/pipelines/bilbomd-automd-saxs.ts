@@ -4,7 +4,12 @@ import path from 'node:path'
 import fs from 'fs-extra'
 import { config } from '../../config/config.js'
 import { logger } from '../../helpers/loggers.js'
-import { initializeJob, cleanupJob, handleError } from '../functions/job-utils.js'
+import {
+  initializeJob,
+  cleanupJob,
+  handleError,
+  sendJobFailureNotification
+} from '../functions/job-utils.js'
 import { updateStepStatus } from '../functions/mongo-utils.js'
 import { createProgressTracker } from '../functions/progress-tracker.js'
 import {
@@ -82,6 +87,7 @@ const processBilboMDAutoMDSAXSJob = async (MQjob: BullMQJob) => {
       keepIons: foundJob.keep_ions,
       keepCrystallisationAgents: foundJob.keep_crystallisation_agents,
       keepWaters: foundJob.keep_waters,
+      ionResnames: foundJob.ion_resnames,
       ligandResnames: foundJob.ligand_resnames,
       ligandSmiles: foundJob.ligand_smiles,
       protonationOverrides: foundJob.protonation_overrides
@@ -159,6 +165,9 @@ const processBilboMDAutoMDSAXSJob = async (MQjob: BullMQJob) => {
     await progress.update(100)
   } catch (error) {
     await handleError(error, foundJob)
+    // Notify the user their AutoMD-SAXS job failed (other pipelines email on
+    // success only; this is opt-in per pipeline so their behaviour is unchanged).
+    await sendJobFailureNotification(foundJob)
   }
 }
 

@@ -95,6 +95,7 @@ const NewAutoMDSaxsJobForm = () => {
   const agentItems = contents.filter((c) => c.category === 'agent')
   const waterItems = contents.filter((c) => c.category === 'water')
 
+
   const initialValues: AutoMDSaxsJobFormValues = {
     title: '',
     pdb_file: '',
@@ -126,7 +127,12 @@ const NewAutoMDSaxsJobForm = () => {
     const smilesForKept: Record<string, string> = {}
     for (const r of keptLigands)
       if (ligandSmiles[r]?.trim()) smilesForKept[r] = ligandSmiles[r].trim()
-    const keepIons = ionItems.some((i) => keep[i.resname])
+    // Per-species ion selection: keep only the ticked ion resnames (keep_ions is
+    // the master switch — true if any ion is kept).
+    const keptIonResnames = ionItems
+      .filter((i) => keep[i.resname])
+      .map((i) => i.resname)
+    const keepIons = keptIonResnames.length > 0
     const keepAgents = agentItems.some((a) => keep[a.resname])
     const keepWaters = waterItems.some((w) => keep[w.resname])
 
@@ -142,6 +148,8 @@ const NewAutoMDSaxsJobForm = () => {
     prepForm.append('keep_ions', String(keepIons))
     prepForm.append('keep_crystallisation_agents', String(keepAgents))
     prepForm.append('keep_waters', String(keepWaters))
+    if (keptIonResnames.length > 0)
+      prepForm.append('ion_resnames', JSON.stringify(keptIonResnames))
     if (keptLigands.length > 0)
       prepForm.append('ligand_resnames', JSON.stringify(keptLigands))
     if (Object.keys(smilesForKept).length > 0)
@@ -159,6 +167,7 @@ const NewAutoMDSaxsJobForm = () => {
           keepIons,
           keepAgents,
           keepWaters,
+          ionResnames: keptIonResnames,
           ligandResnames: keptLigands,
           ligandSmiles: smilesForKept
         }
@@ -304,6 +313,7 @@ const NewAutoMDSaxsJobForm = () => {
                             <AutoMDSAXSStructureViewer
                               pdbText={pdbText}
                               height={360}
+                              keep={keep}
                             />
                           </Grid>
                           <Grid size={{ xs: 12, md: 6 }}>
@@ -319,43 +329,30 @@ const NewAutoMDSaxsJobForm = () => {
                                     residues (always kept)
                                   </TableCell>
                                 </TableRow>
-                                {ionItems.length > 0 && (
-                                  <TableRow>
+                                {/* One toggle per bound-ion species, so e.g. a
+                                    catalytic Zn can be kept while Ca is stripped. */}
+                                {ionItems.map((ion) => (
+                                  <TableRow key={ion.resname}>
                                     <TableCell>
                                       <FormControlLabel
                                         control={
                                           <Checkbox
                                             size="small"
-                                            checked={ionItems.some(
-                                              (i) => keep[i.resname]
-                                            )}
+                                            checked={!!keep[ion.resname]}
                                             onChange={(e) =>
-                                              setKeep((k) => {
-                                                const n = { ...k }
-                                                ionItems.forEach(
-                                                  (i) =>
-                                                    (n[i.resname] = e.target.checked)
-                                                )
-                                                return n
-                                              })
+                                              setKeep((k) => ({
+                                                ...k,
+                                                [ion.resname]: e.target.checked
+                                              }))
                                             }
                                           />
                                         }
-                                        label="Bound ions"
+                                        label={`Bound ion ${ion.resname} ×${ion.count}`}
                                       />
                                     </TableCell>
-                                    <TableCell>
-                                      {ionItems.map((i) => (
-                                        <Chip
-                                          key={i.resname}
-                                          size="small"
-                                          label={`${i.resname} ×${i.count}`}
-                                          sx={{ mr: 0.5 }}
-                                        />
-                                      ))}
-                                    </TableCell>
+                                    <TableCell />
                                   </TableRow>
-                                )}
+                                ))}
                                 {agentItems.length > 0 && (
                                   <TableRow>
                                     <TableCell>
@@ -699,22 +696,26 @@ const NewAutoMDSaxsJobForm = () => {
                         </Box>
                         <Box sx={{ display: 'flex', gap: 2, my: 1 }}>
                           <Field
-                            label="Box padding (nm, blank = auto)"
+                            label="Box padding (nm)"
                             name="box_padding_nm"
                             type="number"
                             as={TextField}
                             disabled={isSubmitting}
                             onChange={handleChange}
                             value={values.box_padding_nm}
+                            helperText="Blank = auto"
+                            sx={{ minWidth: 200 }}
                           />
                           <Field
-                            label="Random seed (blank = random)"
+                            label="Random seed"
                             name="seed"
                             type="number"
                             as={TextField}
                             disabled={isSubmitting}
                             onChange={handleChange}
                             value={values.seed}
+                            helperText="Blank = random"
+                            sx={{ minWidth: 200 }}
                           />
                         </Box>
                       </AccordionDetails>

@@ -32,6 +32,7 @@ interface ReviewState {
   keepIons?: boolean
   keepAgents?: boolean
   keepWaters?: boolean
+  ionResnames?: string[]
   ligandResnames?: string[]
   ligandSmiles?: Record<string, string>
 }
@@ -109,6 +110,8 @@ const AutoMDSAXSReviewPage = () => {
       String(state.keepAgents ?? false)
     )
     form.append('keep_waters', String(state.keepWaters ?? false))
+    if (state.ionResnames && state.ionResnames.length > 0)
+      form.append('ion_resnames', JSON.stringify(state.ionResnames))
     if (state.ligandResnames && state.ligandResnames.length > 0)
       form.append('ligand_resnames', JSON.stringify(state.ligandResnames))
     if (state.ligandSmiles && Object.keys(state.ligandSmiles).length > 0)

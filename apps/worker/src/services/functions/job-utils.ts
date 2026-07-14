@@ -131,6 +131,29 @@ const handleJobEmailNotification = async (
   }
 }
 
+// Failure email — opt-in, called only by pipelines that want it (currently
+// AutoMD-SAXS), so other pipelines' behaviour is unchanged. Reuses the mailer's
+// isError ('joberror') template. Best-effort; never throws.
+const sendJobFailureNotification = async (DBjob: IJob): Promise<void> => {
+  try {
+    if (!config.sendEmailNotifications) return
+    const user = await fetchJobUser(DBjob)
+    if (!user?.email) return
+    sendJobCompleteEmail(
+      user.email,
+      config.bilbomdUrl,
+      DBjob._id.toString(),
+      DBjob.title,
+      true // isError -> 'joberror' template
+    )
+    logger.info(
+      `Failure email sent to ${user.email} for job uuid=${DBjob.uuid}`
+    )
+  } catch (err) {
+    logger.error(`Failed to send failure email: ${getErrorMessage(err)}`)
+  }
+}
+
 const makeDir = async (directory: string) => {
   await fs.ensureDir(directory)
   logger.info(`Create Dir: ${directory}`)
@@ -328,5 +351,6 @@ export {
   generateDCD2PDBInpFile,
   generateInputFile,
   spawnCharmm,
-  handleError
+  handleError,
+  sendJobFailureNotification
 }

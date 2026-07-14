@@ -201,6 +201,14 @@ export interface AutoMDSAXSPcaPoint {
   chi2: number | null
   cluster: number | null
 }
+export interface AutoMDSAXSLigandRmsf {
+  ligand: string
+  chain: string
+  resSeq: number
+  resname: string
+  repeat: number
+  atoms: { name: string; rmsf: number }[]
+}
 export interface AutoMDSAXSClustering {
   pdc: number
   nClusters: number
@@ -237,6 +245,7 @@ export interface AutoMDSAXSAnalysis {
   parameters?: Record<string, unknown> & {
     perFrame?: AutoMDSAXSPerFrame[]
     timeSeries?: AutoMDSAXSTimePoint[]
+    ligandRmsf?: AutoMDSAXSLigandRmsf[]
     pca?: AutoMDSAXSPcaPoint[]
     nClusters?: number
     clusterings?: AutoMDSAXSClustering[]
@@ -304,6 +313,7 @@ export interface AutoMDSAXSRepeatProgress {
   stepTotal: number
   nsDone: number
   nsTotal: number
+  etaSeconds?: number | null
 }
 export interface AutoMDSAXSLiveProgress {
   status: string
@@ -311,6 +321,7 @@ export interface AutoMDSAXSLiveProgress {
   currentRepeat?: number
   nRepeats?: number
   repeats?: AutoMDSAXSRepeatProgress[]
+  etaSeconds?: number | null
 }
 
 const jobsAdapter = createEntityAdapter<BilboMDJobDTO>()

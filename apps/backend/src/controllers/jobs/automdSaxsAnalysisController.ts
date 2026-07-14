@@ -181,6 +181,31 @@ const lastStepFromLog = async (logPath: string): Promise<number | null> => {
   }
 }
 
+// Last "Speed (ns/day)" value from the StateDataReporter CSV, used to estimate
+// time remaining. Header-aware; falls back to the last column (speed is emitted
+// last by the production reporter).
+const lastSpeedFromLog = async (logPath: string): Promise<number | null> => {
+  try {
+    const text = await fs.readFile(logPath, 'utf8')
+    const all = text.split('\n').filter((l) => l.trim())
+    if (all.length < 2) return null
+    const headerLine = all.find((l) => l.startsWith('#')) ?? all[0]
+    const header = headerLine
+      .replace(/^#/, '')
+      .split(',')
+      .map((h) => h.replace(/"/g, '').trim().toLowerCase())
+    const dataLines = all.filter((l) => !l.startsWith('#'))
+    if (dataLines.length === 0) return null
+    const parts = dataLines[dataLines.length - 1].split(',')
+    let col = header.findIndex((h) => h.startsWith('speed'))
+    if (col < 0 || col >= parts.length) col = parts.length - 1
+    const speed = parseFloat(parts[col])
+    return Number.isFinite(speed) && speed > 0 ? speed : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * GET /jobs/:id/automd-saxs-live-progress
  *
@@ -226,15 +251,25 @@ export const getAutoMDSAXSLiveProgress = async (
     const nsTotal: number = p.simulationTimeNs ?? 0
 
     const repeats = []
+    const etas: number[] = []
     for (let i = 1; i <= nRepeats; i++) {
       const logPath = path.join(jobDir, 'production', `rep${i}`, 'production.log')
       const stepDone = await lastStepFromLog(logPath)
+      const nsDone = stepDone != null ? (stepDone * timestepFs) / 1e6 : 0
+      // ETA from OpenMM's reported Speed (ns/day): remaining ns / speed.
+      const speed = await lastSpeedFromLog(logPath) // ns/day
+      const etaSeconds =
+        speed && nsDone > 0 && nsDone < nsTotal
+          ? Math.round(((nsTotal - nsDone) / speed) * 86400)
+          : null
+      if (etaSeconds != null) etas.push(etaSeconds)
       repeats.push({
         repeat: i,
         stepDone: stepDone ?? 0,
         stepTotal,
-        nsDone: stepDone != null ? (stepDone * timestepFs) / 1e6 : 0,
-        nsTotal
+        nsDone,
+        nsTotal,
+        etaSeconds
       })
     }
 
@@ -243,7 +278,10 @@ export const getAutoMDSAXSLiveProgress = async (
       stage: p.stage ?? null,
       currentRepeat: p.currentRepeat ?? 0,
       nRepeats,
-      repeats
+      repeats,
+      // Overall estimate: repeats fan out across GPUs, so the job finishes ~when
+      // the slowest in-progress repeat does (max of the per-repeat ETAs).
+      etaSeconds: etas.length ? Math.max(...etas) : null
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
