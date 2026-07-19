@@ -176,15 +176,20 @@ const allAtomsLoci = async (structure: Structure) => {
 // swallowed (logged) so a bad overlay never breaks the prediction view.
 const loadOverlay = async (plugin: PluginUIContext, text: string) => {
   if (!text.trim()) return
-  // Match the prediction viewer's TER-based chain handling for consistency.
-  const r = assignChainsByTer(text)
+  // The original input can be a PDB or an mmCIF (e.g. an AlphaFold .cif). Detect
+  // the format from the content — an mmCIF has a `data_` header / `_atom_site.`
+  // loop — since a CIF parsed as 'pdb' silently yields no overlay.
+  const isCif = /^\s*data_/m.test(text) || text.includes('_atom_site.')
+  const format: BuiltInTrajectoryFormat = isCif ? 'mmcif' : 'pdb'
+  // TER-based chain assignment is PDB-only; leave CIF text untouched.
+  const payload = isCif ? text : assignChainsByTer(text).text
   const data = await plugin.builders.data.rawData({
-    data: r.text,
+    data: payload,
     label: 'original (input)'
   })
   const trajectory = await plugin.builders.structure.parseTrajectory(
     data,
-    'pdb'
+    format
   )
   await plugin.builders.structure.hierarchy.applyPreset(trajectory, 'default')
 
