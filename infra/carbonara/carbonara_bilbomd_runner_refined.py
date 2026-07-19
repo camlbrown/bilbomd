@@ -347,16 +347,33 @@ def sanitize_input_pdb(input_pdb: Path, carbonara_root: Path) -> Path:
             sys.path.insert(0, str(carbonara_root))
         import CarbonaraDataTools as cdt
 
+        # mmCIF input: the text-based sanitiser below parses PDB fixed columns,
+        # but mmCIF _atom_site rows start with 'ATOM' while being whitespace-
+        # delimited, so it reads a garbage residue name and drops every atom
+        # (input_atom_records: 0 -> empty PDB -> setup crashes). Convert
+        # mmCIF -> PDB first (biopython), then sanitise the resulting PDB.
+        src = input_pdb
+        if input_pdb.suffix.lower() in (".cif", ".mmcif"):
+            if hasattr(cdt, "_convert_cif_to_pdb_for_foxs"):
+                converted, _ = cdt._convert_cif_to_pdb_for_foxs(str(input_pdb))
+                src = Path(converted)
+                print(f"[wrapper] converted mmCIF -> PDB before sanitise: {src}", flush=True)
+            else:
+                print(
+                    "[wrapper] sanitize: mmCIF input but no CIF converter; using as-is",
+                    flush=True,
+                )
+
         if not hasattr(cdt, "sanitize_pdb_for_carbonara"):
             print(
                 "[wrapper] sanitize: sanitize_pdb_for_carbonara unavailable; using PDB as-is",
                 flush=True,
             )
-            return input_pdb
+            return src
 
         cleaned = input_pdb.parent / f"{input_pdb.stem}.carbonara_clean.pdb"
         out, report = cdt.sanitize_pdb_for_carbonara(
-            str(input_pdb),
+            str(src),
             pdb_out=str(cleaned),
             keep_hetatm=True,
             renumber_residues=False,
