@@ -379,9 +379,22 @@ live** once the host `podman run` is removed.
   + the C++ `predictStructureQvary` engine ran 2 fits (best fit 0.0355), producing 4
   fitted model files + fit logs + scatter profiles in `results/`, using the **baked**
   tools (`carbonara_binary:/opt/carbonara/build/bin/predictStructureQvary`,
-  `python_executable:/opt/conda/bin/python`). ~3.3 min, exit 0. *(Rigid mixture path;
-  the flexible-fit `generate_structure`+cg2all backmapping sub-path is present and
-  `--help`-verified but not yet exercised by a full job.)*
+  `python_executable:/opt/conda/bin/python`). ~3.3 min, exit 0.
+- **Flexible-fit + cg2all + FoXS path also validated end-to-end as user 62704
+  (2026-08):** replayed a real c239s flex job (`flex_ranges`, `rotation`,
+  constraints, chain merges) → the C++ `generate_structure` ran (status completed);
+  then `backmap_cli.py --backend cg2all` (the worker's reconstruction step) produced
+  a 910-residue CA PDB → **cg2all all-atom PDB (13,678 atoms)** → FoXS on it
+  (Chi²=2.12). Exit 0.
+- **k8s bug found + fixed by this test:** cg2all downloads its model checkpoint
+  (`CalphaBasedModel.ckpt`, ~49 MB) on first use into its own `site-packages`,
+  needing network **and** write access there — which the non-root pod lacks, so the
+  first backmap crashed (`PermissionError`). The standalone Carbonara image never hit
+  this (it ran as root with network). Fixed in `bilbomd-worker-carbonara.dockerfile`
+  by installing `gdown` and **pre-baking the ckpt at build time** (as root,
+  world-readable); `convert_cg2all` only downloads `if not ckpt.exists()`, so runtime
+  never downloads/writes. Re-verified as user 62704 after the fix — the kind of
+  root-only/network assumption a full e2e run surfaces and a smoke test misses.
 - **Build-time caveat (same shape as AutoMD-SAXS):** the Carbonara **library
   source is not in this branch** — only the 4 wrapper scripts (`carbonara_*.py`)
   are tracked. The `Carbonara/` library + `setupPython.sh` + `CarbonaraDataTools.py`

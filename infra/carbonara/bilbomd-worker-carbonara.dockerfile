@@ -73,6 +73,23 @@ RUN /usr/local/bin/micromamba run -p "${CG2ALL_ENV}" pip install --no-cache-dir 
 RUN /usr/local/bin/micromamba run -p "${CG2ALL_ENV}" pip install --no-cache-dir --no-deps \
     git+https://github.com/huhlim/cg2all@a00b8816736c08852944f147e39164d0f5e1834e
 
+# PRE-BAKE the cg2all model checkpoint. Out of the box, cg2all downloads
+# CalphaBasedModel.ckpt (~49MB) on FIRST use into its own site-packages
+# (`cg2all/model/`) — which needs BOTH network egress AND write access there.
+# On k8s the pod runs as a non-root user that CANNOT write site-packages, so the
+# first backmap would crash (PermissionError, seen via the runner as a cg2all
+# non-zero exit). `convert_cg2all` only downloads `if not ckpt.exists()`, so we
+# fetch it here as root — baked in + world-readable — and runtime never downloads
+# or writes. gdown is the primary downloader (Zenodo/requests is the fallback).
+RUN /usr/local/bin/micromamba run -p "${CG2ALL_ENV}" pip install --no-cache-dir gdown
+RUN /usr/local/bin/micromamba run -p "${CG2ALL_ENV}" python -c "\
+from pathlib import Path; import cg2all, cg2all.lib.libmodel as L; \
+base = Path(cg2all.__file__).parent / 'model'; base.mkdir(exist_ok=True); \
+out = base / 'CalphaBasedModel.ckpt'; \
+L.download_ckpt_file('CalphaBasedModel', out, fix_atom=False); \
+assert out.stat().st_size > 1_000_000, 'cg2all ckpt too small'; \
+print('baked cg2all ckpt:', out, out.stat().st_size)"
+
 # Runtime wrappers that ACTIVATE the carbonara envs (so bare `python`/`pyfoxs`
 # inside Carbonara resolve to its env, without touching the worker's PATH):
 #   carbonara-python              -> the Carbonara py3.12 env python  (CARBONARA_PYTHON_BIN)
@@ -100,6 +117,8 @@ ENV CARBONARA_PYTHON_BIN=/usr/local/bin/carbonara-python \
 RUN carbonara-python -c "import CarbonaraDataTools, biobox, torch; print('carbonara py OK')" \
     && /usr/local/bin/micromamba run -p /opt/conda pyfoxs --help >/dev/null && echo "pyfoxs OK" \
     && convert_cg2all_carbonara --help >/dev/null && echo "cg2all OK" \
+    && test -s /opt/conda/envs/cg2all/lib/python3.10/site-packages/cg2all/model/CalphaBasedModel.ckpt \
+       && echo "cg2all ckpt baked OK" \
     && test -x /opt/carbonara/build/* 2>/dev/null; ls /opt/carbonara/build | head -3 \
     && /opt/envs/openmm/bin/automd-saxs --help >/dev/null && echo "automd-saxs still OK" \
     && /usr/bin/multi_foxs --help >/dev/null 2>&1 || true
