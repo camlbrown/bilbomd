@@ -96,7 +96,8 @@ placeholder in the runbook §1 filled and Option A vs B decided.
 - ☐ **One combined worker image** (worker + AutoMD-SAXS **+ Carbonara** all baked
   in) — **no nested containers for either pipeline**; both run as normal
   subprocesses in the worker pod. Built + validated locally as the k8s non-root
-  user (both toolchains coexist, worker's own OpenMM/automd-saxs unshadowed).
+  user (both toolchains coexist, worker's own OpenMM/automd-saxs unshadowed), incl.
+  a **full end-to-end Carbonara `inprocess` job** (real calmodulin fit → completed).
 - ☐ Carbonara de-nesting (`CARBONARA_EXEC=inprocess`) implemented on **all 6** call
   sites, and the Carbonara runtime is **baked into the worker image** (task 9a), so
   Carbonara runs in-pod with no separate image.
@@ -123,7 +124,9 @@ verified with `helm template` (helm 3.14.3).
   `infra/carbonara/bilbomd-worker-carbonara.dockerfile` (build step 3, runbook
   §4.1). Built + validated locally as the k8s non-root user; PATH not reordered so
   the worker's OpenMM/automd-saxs are unshadowed. Both pipelines run from **one**
-  image — no separate Carbonara image, no k8s-Job/RBAC needed.
+  image — no separate Carbonara image, no k8s-Job/RBAC needed. A **full end-to-end
+  Carbonara `inprocess` job** (real calmodulin mixture fit) ran to `completed` in
+  the combined image using the baked tools.
 
 **✅ DONE — Helm chart (Diamond now renders a *startable* deployment):**
 - ☑ Liveness/readiness probes (worker `/config:3000`, backend `/healthcheck:3500`).

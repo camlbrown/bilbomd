@@ -371,6 +371,17 @@ live** once the host `podman run` is removed.
   `/opt/carbonara/build/bin/{predictStructureQvary,generate_structure,single_fit}`
   (exactly where the runner resolves `CARBONARA_ROOT/build/bin/…`) ✅ ·
   `multi_foxs` ✅.
+- **End-to-end `inprocess` job validated (2026-08):** ran the actual handler
+  command — `carbonara-python /opt/carbonara/carbonara_bilbomd_runner_refined.py
+  --job-json … --clean` — in `worker-full:test` **as user 62704**, replaying a real
+  calmodulin 2-structure mixture job (`fit_n_times=2`, `mixture_n=2`). Result:
+  `wrapper_summary.json` `status:"completed"`, `return_code:0`; `setup_carbonara.py`
+  + the C++ `predictStructureQvary` engine ran 2 fits (best fit 0.0355), producing 4
+  fitted model files + fit logs + scatter profiles in `results/`, using the **baked**
+  tools (`carbonara_binary:/opt/carbonara/build/bin/predictStructureQvary`,
+  `python_executable:/opt/conda/bin/python`). ~3.3 min, exit 0. *(Rigid mixture path;
+  the flexible-fit `generate_structure`+cg2all backmapping sub-path is present and
+  `--help`-verified but not yet exercised by a full job.)*
 - **Build-time caveat (same shape as AutoMD-SAXS):** the Carbonara **library
   source is not in this branch** — only the 4 wrapper scripts (`carbonara_*.py`)
   are tracked. The `Carbonara/` library + `setupPython.sh` + `CarbonaraDataTools.py`
@@ -385,9 +396,10 @@ live** once the host `podman run` is removed.
 
 **Verdict:** a first k8s deploy of **BOTH pipelines** works from this branch. The
 worker image built per runbook §4.1 (all three steps) contains AutoMD-SAXS **and**
-Carbonara, both proven to run in one image as the deployed non-root user. Remaining
-work is cluster-side values (registry, storage classes, GPU) + the one end-to-end
-job run once deployed — no more packaging gaps.
+Carbonara, both proven to run in one image as the deployed non-root user — including
+a **full end-to-end Carbonara `inprocess` job** (real calmodulin fit, status
+completed) run locally in the combined image. Remaining work is cluster-side values
+only (registry, storage classes, GPU) — no packaging or execution gaps.
 
 ---
 
