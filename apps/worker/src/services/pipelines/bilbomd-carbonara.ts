@@ -22,6 +22,7 @@ import {
   parseMultiFoxsFit,
   CARBONARA_JOB_MOUNT
 } from '../functions/carbonara-functions.js'
+import { createResultsArchive } from '../functions/prepare-results.js'
 
 /**
  * Local Carbonara pipeline.
@@ -596,6 +597,23 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       await MQjob.log('carbonara-analysis: failed (non-fatal; results preserved)')
     }
     await MQjob.log('end carbonara-analysis')
+
+    // Bundle the results dir into results-<uuidPrefix>.tar.gz so BilboMD's generic
+    // "Download Results" endpoint (GET /jobs/:id/results) + the CarbonaraDownloadPanel
+    // button can serve it. Non-fatal: a tar hiccup must not fail an otherwise
+    // successful job (the per-file analysis endpoints still work from the PVC).
+    try {
+      await MQjob.log('start carbonara-archive')
+      await createResultsArchive(workDir, foundJob.uuid)
+      await MQjob.log('end carbonara-archive')
+    } catch (archiveErr) {
+      logger.warn(
+        `carbonara-archive failed for ${foundJob.uuid}: ${
+          archiveErr instanceof Error ? archiveErr.message : String(archiveErr)
+        }`
+      )
+      await MQjob.log('carbonara-archive: failed (non-fatal; results preserved)')
+    }
 
     foundJob.results_ready = true
     await foundJob.save()
