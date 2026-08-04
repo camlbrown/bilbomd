@@ -12,42 +12,47 @@
 # REQUIRED TEMPLATE EDITS note about why the storage ones become irrelevant.
 #
 # -----------------------------------------------------------------------------
-# REQUIRED TEMPLATE EDITS (values alone cannot do these — do before deploying):
+# TEMPLATE EDITS #1 and #2 ARE NOW APPLIED (values-gated; NERSC renders unchanged):
 #
-#   1. STORAGE: worker-deployment.yaml + backend-deployment.yaml mount
-#      /bilbomd/uploads as a hostPath built from cfs_dir/nersc_repo/uploads.
-#      Diamond has no CFS hostPath → replace that volume with a ReadWriteMany
-#      PVC (claimName: bilbomd-uploads) on BOTH backend and worker. Logs can be
-#      an emptyDir or a second PVC. (Flagged [VERIFY] — edit after confirming the
-#      exact volume block; see K8S_DEPLOYMENT_RUNBOOK.md §7-§8.)
+#   1. STORAGE (DONE): worker + backend `vol-uploads` switches from the CFS
+#      hostPath to a PVC when persistence.uploads.claimName is set (below). NERSC
+#      (no persistence key) still renders the hostPath. (Logs remain hostPath;
+#      switch to an emptyDir/second PVC later if wanted.)
 #
-#   2. CONFIGMAP ENV: bilbomd-configmaps.yaml sets REDIS_HOST/MONGO_HOSTNAME/
-#      DATA_VOL but NOT the pipeline de-nesting vars. ADD:
-#         CARBONARA_EXEC: inprocess
-#         AUTOMD_SAXS_BIN: /opt/envs/openmm/bin/automd-saxs
-#      Without CARBONARA_EXEC=inprocess the worker tries `podman run` in-pod and
-#      fails. (AUTOMD_SAXS_BIN is also baked into the image, so it is belt-and-braces.)
+#   2. CONFIGMAP ENV (DONE): CARBONARA_EXEC + AUTOMD_SAXS_BIN are injected into
+#      the bilbomd-config ConfigMap when the `pipelines` block (below) is set.
+#      Without CARBONARA_EXEC=inprocess the worker would try `podman run` in-pod
+#      and fail. (AUTOMD_SAXS_BIN is also baked into the image — belt-and-braces.)
 #
-#   3. WORKER RESOURCES/GPU: worker-deployment.yaml has `resources: {}`. For
-#      "MD in k8s" (Option A) add under the worker container:
-#         resources:
-#           limits:   { nvidia.com/gpu: <GPU_COUNT>, memory: <WORKER_MEM_LIMIT> }
-#           requests: { memory: <WORKER_MEM_REQUEST>, cpu: <WORKER_CPU_REQUEST> }
-#      Skip the nvidia.com/gpu line if deploying web-tier-only first.
+# The former Diamond BLOCKERS (#4 sfapi secret, #5 logs/scripts hostPath, #6
+# postStart hook) ARE NOW APPLIED — all gated on the `.Values.persistence` block
+# (the "self-contained / Diamond" marker), so NERSC (no persistence key) renders
+# byte-identical and Diamond pods can start:
 #
-#   4. SFAPI: the worker/backend deployments have a secretRef to `sfapi-priv-key`
-#      (NERSC Superfacility key) and mount /secrets. Not needed for Option A —
-#      make that secretRef optional or remove it for Diamond, and set USE_NERSC=false.
+#   4. SFAPI SECRET (DONE): worker + backend `secretRef: sfapi-priv-key` and the
+#      `vol-sfapi-priv-key` secret volume are now `optional: true` on Diamond, so
+#      the (absent) NERSC secret no longer blocks startup. Still set USE_NERSC=false
+#      in the ConfigMap/values for Diamond.
+#   5. LOGS/SCRIPTS (DONE): vol-logs + vol-scripts render as `emptyDir` on Diamond
+#      instead of a CFS hostPath, so the pods start without CFS.
+#   6. postStart HOOK (DONE): the NERSC CFS-sync postStart hook is gated off on
+#      Diamond.
+#   8. USE_NERSC / BILBOMD_DEPLOY_SITE (DONE): the ConfigMap now renders
+#      USE_NERSC='false' + BILBOMD_DEPLOY_SITE=diamond on Diamond (persistence set)
+#      so the worker runs MD in-pod instead of submitting to NERSC Slurm; NERSC
+#      still renders 'true' / nersc.
 #
-#   5. IMAGE USER: the combined worker image currently ends as root (the
-#      automd-saxs Dockerfile does `USER root` and does not switch back). The
-#      Helm securityContext.runAsUser: 62704 overrides this at runtime, so it is
-#      not a blocker; optionally add `USER 62704` at the end of that Dockerfile.
+# GENUINELY REMAINING (values-only / optional — not startup blockers):
 #
-#   6. NERSC postStart HOOK: worker-deployment.yaml has a lifecycle.postStart hook
-#      running /app/scripts/nersc/sync-nersc-scripts-to-cfs.sh. On Diamond this
-#      script is irrelevant and a failing postStart hook PREVENTS the pod from
-#      starting. Remove (or make conditional) that lifecycle block for Diamond.
+#   3. WORKER RESOURCES/GPU: worker `resources` are values-driven; set
+#      worker.resources below (memory + nvidia.com/gpu). Skip nvidia.com/gpu for a
+#      web-tier-only first deploy.
+#   7. IMAGE USER (optional): the combined worker image ends as root (the
+#      automd-saxs Dockerfile does `USER root` and does not switch back); Helm
+#      securityContext.runAsUser: 62704 overrides it at runtime. Optionally add
+#      `USER 62704` at the end of that Dockerfile.
+#   9. UI flag: ui-configmaps.yaml sets VITE_USE_NERSC="true" (a UI build/display
+#      flag). Review whether Diamond wants it "false"; UI-only, not a blocker.
 #
 # NOTE: health probes (worker GET /config:3000, backend GET /healthcheck:3500) and
 # values-driven resources are ALREADY added to the templates (Phase 2 task S2) and
@@ -66,7 +71,8 @@ docker_registry: <DIAMOND_REGISTRY>    # e.g. registry.diamond.ac.uk/bilbomd
 persistence:
   create: true
   uploads:                              # shared job/results volume (backend + worker)
-    claimName: bilbomd-uploads
+    claimName: bilbomd-uploads          # setting this switches the uploads volume
+                                        # from hostPath to this PVC (template edit #1)
     accessMode: ReadWriteMany
     storageClass: <RWX_STORAGE_CLASS>
     size: <UPLOADS_SIZE>                # e.g. 500Gi
@@ -102,6 +108,13 @@ auth:
   orcid_issuer: 'https://orcid.org'
   orcid_client_id: '<ORCID_CLIENT_ID>'
   orcid_redirect_uri: 'https://<UI_HOST>/api/v1/auth/orcid/callback'
+
+# --- pipeline de-nesting for k8s (template edit #2, now applied via the ConfigMap) ---
+# These inject CARBONARA_EXEC + AUTOMD_SAXS_BIN into the bilbomd-config ConfigMap.
+# CARBONARA_EXEC=inprocess is REQUIRED on k8s (else the worker tries `podman run`).
+pipelines:
+  carbonaraExec: inprocess
+  automdSaxsBin: /opt/envs/openmm/bin/automd-saxs
 
 # Log paths — only used if logs stay hostPath-style. With a PVC/emptyDir (edit #1)
 # these become the sub-paths inside that volume.

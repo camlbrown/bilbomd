@@ -22,8 +22,8 @@ data:
   BILBOMD_LOGS: /bilbomd/logs
   NODE_ENV: '{{ .Values.env.NODE_ENV }}'
   BILBOMD_ENV: '{{ .Values.env.BILBOMD_ENV }}'
-  BILBOMD_DEPLOY_SITE: nersc
-  USE_NERSC: 'true'
+  BILBOMD_DEPLOY_SITE: {{ if .Values.persistence }}diamond{{ else }}nersc{{ end }}
+  USE_NERSC: '{{ if .Values.persistence }}false{{ else }}true{{ end }}'
   NERSC_PROJECT: 'm4659'
   SFAPI_URL: https://api.nersc.gov/api/v1.2
   SFAPI_TOKEN_EXPIRES: '{{ .Values.sfapi.token_expires }}'
@@ -45,3 +45,13 @@ data:
   ORCID_ISSUER: '{{ .Values.auth.orcid_issuer }}'
   ORCID_CLIENT_ID: '{{ .Values.auth.orcid_client_id }}'
   ORCID_REDIRECT_URI: '{{ .Values.auth.orcid_redirect_uri }}'
+  {{- /* Pipeline de-nesting for k8s (Carbonara + AutoMD-SAXS). Rendered only when
+         set in values (values-diamond.yaml) so the NERSC ConfigMap is unchanged. */}}
+  {{- with .Values.pipelines }}
+  {{- with .carbonaraExec }}
+  CARBONARA_EXEC: '{{ . }}'
+  {{- end }}
+  {{- with .automdSaxsBin }}
+  AUTOMD_SAXS_BIN: '{{ . }}'
+  {{- end }}
+  {{- end }}

@@ -34,17 +34,21 @@ spec:
             optional: false
         - secretRef:
             name: sfapi-priv-key
-            optional: false
+            # NERSC Superfacility key; absent on Diamond. optional: true there so
+            # the pod starts without it (self-contained mode = persistence set).
+            optional: {{ if .Values.persistence }}true{{ else }}false{{ end }}
         - secretRef:
             name: {{ .Values.namespace }}-secrets
             optional: false
         image: "{{ .Values.worker.image.registry }}/{{ .Values.worker.image.owner }}/{{ with .Values.worker.image.user }}{{ . }}/{{ end }}{{ with .Values.worker.image.repository }}{{ . }}{{ end }}:{{ .Values.worker.image.tag }}"
         imagePullPolicy: "{{ .Values.worker.image.pullPolicy }}"
+        {{- if not .Values.persistence }}
         lifecycle:
           postStart:
             exec:
               command:
               - /app/scripts/nersc/sync-nersc-scripts-to-cfs.sh
+        {{- end }}
         name: container-0
         # The worker serves a config/health server on port 3000 (GET /config).
         # Readiness gates Service membership (safe). Liveness is deliberately
@@ -103,15 +107,38 @@ spec:
         secret:
           defaultMode: 420
           secretName: sfapi-priv-key
-      - hostPath:
+          {{- if .Values.persistence }}
+          optional: true
+          {{- end }}
+      # Shared job/results volume. Diamond: a ReadWriteMany PVC (set
+      # persistence.uploads.claimName in values-diamond.yaml). NERSC (no
+      # persistence key): unchanged hostPath onto CFS via the else branch.
+      - name: vol-uploads
+        {{- $uploadsClaim := "" }}
+        {{- with .Values.persistence }}{{- with .uploads }}{{- $uploadsClaim = .claimName | default "" }}{{- end }}{{- end }}
+        {{- if $uploadsClaim }}
+        persistentVolumeClaim:
+          claimName: {{ $uploadsClaim }}
+        {{- else }}
+        hostPath:
           path: {{ .Values.cfs_dir }}/{{ .Values.nersc_repo }}/{{ .Values.uploads }}
           type: Directory
-        name: vol-uploads
-      - hostPath:
+        {{- end }}
+      # Logs + scripts: NERSC uses CFS hostPaths (type: Directory, must pre-exist).
+      # Diamond (persistence set) uses an emptyDir so the pod can start without CFS.
+      - name: vol-logs
+        {{- if .Values.persistence }}
+        emptyDir: {}
+        {{- else }}
+        hostPath:
           path: {{ .Values.cfs_dir }}/{{ .Values.nersc_repo }}/{{ .Values.logs.worker }}
           type: Directory
-        name: vol-logs
-      - hostPath:
+        {{- end }}
+      - name: vol-scripts
+        {{- if .Values.persistence }}
+        emptyDir: {}
+        {{- else }}
+        hostPath:
           path: {{ .Values.cfs_dir }}/{{ .Values.nersc_repo }}/{{ .Values.scripts }}
           type: Directory
-        name: vol-scripts
+        {{- end }}
