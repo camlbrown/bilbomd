@@ -1,0 +1,167 @@
+# values-diamond.yaml — DRAFT (Phase 2 task M4)
+# =============================================================================
+# Diamond Light Source deployment values for the BilboMD Helm chart.
+# The existing chart was authored for NERSC's "Spin" cluster; this file adapts
+# it FOR Diamond. Placeholders <LIKE_THIS> must be filled from the k8s admin
+# (see K8S_MEETING_CHECKLIST.md). This is a DRAFT — not finalised, not applied.
+#
+# HOW HELM MERGES: `helm ... -f values-diamond.yaml` always loads the chart's
+# default values.yaml FIRST, then overlays this file. So this file only needs to
+# OVERRIDE the Diamond-specific keys (below). NERSC keys it does not override
+# (cfs_dir, nersc_repo, sfapi, pscratch) still come from values.yaml — see the
+# REQUIRED TEMPLATE EDITS note about why the storage ones become irrelevant.
+#
+# -----------------------------------------------------------------------------
+# REQUIRED TEMPLATE EDITS (values alone cannot do these — do before deploying):
+#
+#   1. STORAGE: worker-deployment.yaml + backend-deployment.yaml mount
+#      /bilbomd/uploads as a hostPath built from cfs_dir/nersc_repo/uploads.
+#      Diamond has no CFS hostPath → replace that volume with a ReadWriteMany
+#      PVC (claimName: bilbomd-uploads) on BOTH backend and worker. Logs can be
+#      an emptyDir or a second PVC. (Flagged [VERIFY] — edit after confirming the
+#      exact volume block; see K8S_DEPLOYMENT_RUNBOOK.md §7-§8.)
+#
+#   2. CONFIGMAP ENV: bilbomd-configmaps.yaml sets REDIS_HOST/MONGO_HOSTNAME/
+#      DATA_VOL but NOT the pipeline de-nesting vars. ADD:
+#         CARBONARA_EXEC: inprocess
+#         AUTOMD_SAXS_BIN: /opt/envs/openmm/bin/automd-saxs
+#      Without CARBONARA_EXEC=inprocess the worker tries `podman run` in-pod and
+#      fails. (AUTOMD_SAXS_BIN is also baked into the image, so it is belt-and-braces.)
+#
+#   3. WORKER RESOURCES/GPU: worker-deployment.yaml has `resources: {}`. For
+#      "MD in k8s" (Option A) add under the worker container:
+#         resources:
+#           limits:   { nvidia.com/gpu: <GPU_COUNT>, memory: <WORKER_MEM_LIMIT> }
+#           requests: { memory: <WORKER_MEM_REQUEST>, cpu: <WORKER_CPU_REQUEST> }
+#      Skip the nvidia.com/gpu line if deploying web-tier-only first.
+#
+#   4. SFAPI: the worker/backend deployments have a secretRef to `sfapi-priv-key`
+#      (NERSC Superfacility key) and mount /secrets. Not needed for Option A —
+#      make that secretRef optional or remove it for Diamond, and set USE_NERSC=false.
+#
+#   5. IMAGE USER: the combined worker image currently ends as root (the
+#      automd-saxs Dockerfile does `USER root` and does not switch back). The
+#      Helm securityContext.runAsUser: 62704 overrides this at runtime, so it is
+#      not a blocker; optionally add `USER 62704` at the end of that Dockerfile.
+#
+#   6. NERSC postStart HOOK: worker-deployment.yaml has a lifecycle.postStart hook
+#      running /app/scripts/nersc/sync-nersc-scripts-to-cfs.sh. On Diamond this
+#      script is irrelevant and a failing postStart hook PREVENTS the pod from
+#      starting. Remove (or make conditional) that lifecycle block for Diamond.
+#
+# NOTE: health probes (worker GET /config:3000, backend GET /healthcheck:3500) and
+# values-driven resources are ALREADY added to the templates (Phase 2 task S2) and
+# render as {} unless overridden — the worker/backend `resources:` below drive them.
+# =============================================================================
+
+# --- overrides of values.yaml top-level keys ---
+namespace: <NAMESPACE>                 # e.g. bilbomd
+docker_registry: <DIAMOND_REGISTRY>    # e.g. registry.diamond.ac.uk/bilbomd
+# nersc_repo / cfs_dir / pscratch / sfapi are inherited from values.yaml but are
+# NOT USED once storage is switched to a PVC (edit #1) and USE_NERSC=false.
+
+ingress:
+  host: '<UI_INGRESS_HOST>'            # internal ingress host, if applicable
+  fqdn: '<UI_HOST>'                    # public DNS for the UI, e.g. bilbomd.diamond.ac.uk
+  secret: '<TLS_SECRET>'              # k8s secret holding the UI TLS cert (or cert-manager)
+
+bilbomd:
+  url: 'https://<UI_HOST>'
+
+env:
+  NODE_ENV: 'production'
+  BILBOMD_ENV: 'production'
+  # USE_NERSC is false for Option A (MD runs in the worker pod, not on HPC).
+  # If the ConfigMap templates USE_NERSC from values, set it false here; otherwise
+  # set USE_NERSC: 'false' directly in bilbomd-configmaps.yaml.
+
+auth:
+  orcid_issuer: 'https://orcid.org'
+  orcid_client_id: '<ORCID_CLIENT_ID>'
+  orcid_redirect_uri: 'https://<UI_HOST>/api/v1/auth/orcid/callback'
+
+# Log paths — only used if logs stay hostPath-style. With a PVC/emptyDir (edit #1)
+# these become the sub-paths inside that volume.
+logs:
+  backend: 'logs/backend'
+  worker: 'logs/worker'
+  ui: 'logs/ui'
+backups: 'backups'
+scripts: 'scripts'
+uploads: 'uploads'
+working_dir: ''
+
+# --- images: point at the Diamond registry + the ONE pinned combined worker tag ---
+# NOTE: worker.repository is the COMBINED worker image (worker base + automd_saxs
+# v0.1.1), built per K8S_DEPLOYMENT_RUNBOOK.md §4.1. Use ONE tag everywhere (S3).
+
+mongo:
+  name: mongo
+  image:
+    repository: mongo
+    tag: 8.2.6
+    pullPolicy: IfNotPresent
+    secret: <PULL_SECRET_NAME>
+  config:
+    MONGO_INITDB_ROOT_USERNAME: 'bilbomd-backend-user'
+
+redis:
+  name: redis
+  image:
+    repository: redis
+    tag: 8.6.2
+    pullPolicy: IfNotPresent
+    secret: <PULL_SECRET_NAME>
+
+ui:
+  name: ui
+  image:
+    registry: <DIAMOND_REGISTRY>
+    owner: <REGISTRY_OWNER>            # the path segment after the registry host, or null
+    user: null
+    repository: bilbomd-ui
+    build: null
+    tag: <IMAGE_TAG>
+    pullPolicy: Always
+    secret: <PULL_SECRET_NAME>
+
+backend:
+  name: backend
+  image:
+    registry: <DIAMOND_REGISTRY>
+    owner: <REGISTRY_OWNER>
+    user: null
+    repository: bilbomd-backend
+    build: null
+    tag: <IMAGE_TAG>
+    pullPolicy: Always
+    secret: <PULL_SECRET_NAME>
+  # Modest requests; the backend is not compute-heavy.
+  resources:
+    requests:
+      cpu: '250m'
+      memory: '512Mi'
+    limits:
+      memory: '1Gi'
+
+worker:
+  name: worker
+  image:
+    registry: <DIAMOND_REGISTRY>
+    owner: <REGISTRY_OWNER>
+    user: null
+    repository: bilbomd-worker            # the COMBINED worker image (worker + automd-saxs v0.1.1)
+    build: null
+    tag: <IMAGE_TAG>
+    pullPolicy: Always
+    secret: <PULL_SECRET_NAME>
+  # The worker runs MD in-pod (Option A). Set a memory request and (if GPU nodes
+  # exist) request a GPU. Remove the nvidia.com/gpu line for a web-tier-only first
+  # deploy. Numbers are placeholders — size with the admin.
+  resources:
+    requests:
+      cpu: '1'
+      memory: '<WORKER_MEM_REQUEST>'      # e.g. 8Gi
+    limits:
+      memory: '<WORKER_MEM_LIMIT>'        # e.g. 16Gi
+      nvidia.com/gpu: <GPU_COUNT>         # e.g. 1  (delete this line if no GPU)

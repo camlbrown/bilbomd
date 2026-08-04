@@ -43,7 +43,25 @@ spec:
         - containerPort: 3500
           name: 3500tcp
           protocol: TCP
-        resources: {}
+        # Backend serves GET /healthcheck on 3500 (returns 200 when healthy).
+        readinessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 3500
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 3500
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        # Values-driven; defaults to {} so existing (NERSC) renders are unchanged.
+        resources: {{- toYaml (.Values.backend.resources | default dict) | nindent 10 }}
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

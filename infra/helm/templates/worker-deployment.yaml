@@ -46,7 +46,29 @@ spec:
               command:
               - /app/scripts/nersc/sync-nersc-scripts-to-cfs.sh
         name: container-0
-        resources: {}
+        # The worker serves a config/health server on port 3000 (GET /config).
+        # Readiness gates Service membership (safe). Liveness is deliberately
+        # LENIENT so a long-running MD job is never restarted mid-run — only a
+        # truly hung worker (health server unresponsive for minutes) is recycled.
+        readinessProbe:
+          httpGet:
+            path: /config
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /config
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 6
+        # Values-driven; defaults to {} so existing (NERSC) renders are unchanged.
+        # Diamond sets worker.resources (memory + nvidia.com/gpu) in values-diamond.yaml.
+        resources: {{- toYaml (.Values.worker.resources | default dict) | nindent 10 }}
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
