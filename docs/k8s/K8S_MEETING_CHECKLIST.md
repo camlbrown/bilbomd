@@ -34,7 +34,9 @@ placeholder in the runbook §1 filled and Option A vs B decided.
 
 **Registry / images**
 - ☐ Which **registry** do we push to and pull from? Auth method for `podman login`?
-- ☐ Any **image size limit**? (Carbonara runtime is ~5 GB.)
+- ☐ Any **image size limit**? The combined worker image (worker + AutoMD-SAXS +
+  Carbonara baked in) is **~23 GB** — flag this; confirm the registry + nodes
+  accept it and there's disk headroom for the pull.
 - ☐ Pull-through cache of `ghcr.io` available, or must we mirror images?
 - ☐ Name to use for the **image-pull secret**?
 
@@ -91,10 +93,13 @@ placeholder in the runbook §1 filled and Option A vs B decided.
 ## 4. What we bring to the table (state plainly)
 
 - ☐ A **working Helm chart** already proven on k8s at NERSC — we adapt, not author.
-- ☐ **One combined worker image** (worker + AutoMD-SAXS baked in) — no nested
-  containers for AutoMD-SAXS; runs as a normal subprocess in the worker pod.
-- ☐ Carbonara de-nesting (`CARBONARA_EXEC=inprocess`) already implemented for the
-  main pipeline (small remaining wiring for 2 preview steps — disclosed).
+- ☐ **One combined worker image** (worker + AutoMD-SAXS **+ Carbonara** all baked
+  in) — **no nested containers for either pipeline**; both run as normal
+  subprocesses in the worker pod. Built + validated locally as the k8s non-root
+  user (both toolchains coexist, worker's own OpenMM/automd-saxs unshadowed).
+- ☐ Carbonara de-nesting (`CARBONARA_EXEC=inprocess`) implemented on **all 6** call
+  sites, and the Carbonara runtime is **baked into the worker image** (task 9a), so
+  Carbonara runs in-pod with no separate image.
 - ☐ **Non-privileged** pods; no runtime socket needed.
 - ☐ Pinned, versioned image tags (reproducible; `helm rollback` works).
 - ☐ Both pipelines are **job types in one worker**, not new services — minimal
@@ -113,6 +118,12 @@ verified with `helm template` (helm 3.14.3).
 - ☑ Carbonara de-nesting complete — `CARBONARA_EXEC=inprocess` on **all 6** call
   sites (main pipeline + preview + auto-flex).
 - ☑ AutoMD-SAXS runs as a direct in-pod subprocess (no nested container).
+- ☑ **9a bake-in DONE** — Carbonara runtime (py3.12 env + isolated cg2all py3.10 +
+  C++ engine) baked into the worker image via
+  `infra/carbonara/bilbomd-worker-carbonara.dockerfile` (build step 3, runbook
+  §4.1). Built + validated locally as the k8s non-root user; PATH not reordered so
+  the worker's OpenMM/automd-saxs are unshadowed. Both pipelines run from **one**
+  image — no separate Carbonara image, no k8s-Job/RBAC needed.
 
 **✅ DONE — Helm chart (Diamond now renders a *startable* deployment):**
 - ☑ Liveness/readiness probes (worker `/config:3000`, backend `/healthcheck:3500`).

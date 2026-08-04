@@ -51,6 +51,55 @@ podman build -f Dockerfile.carbonara-allatom-runtime -t carbonara-allatom-runtim
 The Dockerfile bakes the wrapper at
 `/opt/carbonara/carbonara_bilbomd_runner_refined.py`.
 
+## Baking Carbonara INTO the worker image (k8s `inprocess` mode)
+
+`Dockerfile.carbonara-allatom-runtime` (above) builds a **standalone** Carbonara
+image that the worker invokes with `podman run` — fine on a single host, but a
+**nested-container anti-pattern on Kubernetes** (a pod launching a container).
+
+For k8s we instead **layer the Carbonara runtime onto the combined worker image**
+so the worker runs Carbonara **in its own pod** with `CARBONARA_EXEC=inprocess`
+(no nested container). That is what `bilbomd-worker-carbonara.dockerfile` does —
+it is the **third** step of the worker build chain:
+
+1. `apps/worker/bilbomd-worker.dockerfile` → branch worker
+2. `infra/automd-saxs/Dockerfile` → **+ AutoMD-SAXS** (`BASE_IMAGE` = step 1)
+3. `infra/carbonara/bilbomd-worker-carbonara.dockerfile` → **+ Carbonara**
+   (`BASE_IMAGE` = step 2) = the final deploy worker image
+
+It installs the Carbonara py3.12 env + isolated cg2all py3.10 env + the C++ engine
+into `/opt/conda` **without reordering the global PATH**, so the worker's own
+OpenMM Python (`/opt/envs/openmm`) and the `automd-saxs` CLI are never shadowed.
+Carbonara is reached via env-activating wrappers (`/usr/local/bin/carbonara-python`,
+`/usr/local/bin/convert_cg2all_carbonara`) and the image bakes in the
+`CARBONARA_*` env (`CARBONARA_PYTHON_BIN`, `CARBONARA_ROOT`, `CARBONARA_RUNNER`,
+`CARBONARA_CG2ALL_EXEC`, `CARBONARA_MULTIFOXS_BIN`, …) so `inprocess` resolves the
+baked tools with no extra wiring beyond `CARBONARA_EXEC=inprocess`.
+
+Build context (same layout as the standalone image):
+
+```bash
+mkdir -p /tmp/carb-build && cd /tmp/carb-build
+git clone <upstream-carbonara-repo> Carbonara          # pristine third-party code
+cp /path/to/bilbomd/infra/carbonara/carbonara_bilbomd_runner_refined.py .
+cp /path/to/bilbomd/infra/carbonara/carbonara_initfoxs.py .
+cp /path/to/bilbomd/infra/carbonara/carbonara_autoflex.py .
+cp /path/to/bilbomd/infra/carbonara/carbonara_results.py .
+cp /path/to/bilbomd/infra/carbonara/bilbomd-worker-carbonara.dockerfile .
+podman build -f bilbomd-worker-carbonara.dockerfile \
+  --build-arg BASE_IMAGE=<the combined worker+automd image from step 2> \
+  -t <DIAMOND_REGISTRY>/bilbomd-worker:<IMAGE_TAG> .
+```
+
+The C++ engine is compiled to `/opt/carbonara/build/bin/` (`predictStructureQvary`,
+`generate_structure`, `single_fit`), exactly where the runner looks
+(`CARBONARA_ROOT/build/bin/…`). Validated locally (2026-08): built on the combined
+worker image and run as the k8s non-root user — both toolchains coexist
+(`automd-saxs`, `carbonara-python`+`CarbonaraDataTools`/`biobox`/`torch`, `pyfoxs`,
+`convert_cg2all_carbonara`, the C++ binaries, `multi_foxs`) with the worker's
+OpenMM/automd-saxs unshadowed. See `docs/k8s/K8S_DEPLOYMENT_RUNBOOK.md` §4.1 and
+`docs/k8s/K8S_READINESS_AUDIT.md` §6.3.
+
 ## Local development without rebuilding the image
 
 To iterate on the wrapper without rebuilding the (large) image, the BilboMD

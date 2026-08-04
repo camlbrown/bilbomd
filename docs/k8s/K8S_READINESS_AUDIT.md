@@ -135,7 +135,7 @@ reproducibility depends on all three:
 | bilbomd (fork) | `/home/kri42825/bilbomd` | `camlbrown/bilbomd` | `feature/carbonara-worker` @ `914769d3` | backend/ui/worker images, Helm chart |
 | bilbomd worktree | `/home/kri42825/bilbomd-automd-saxs` | (same repo) | `feature/automd-saxs-worker` @ `fe34372c` | the deployment branch |
 | AutoMD-SAXS (Python) | `/home/kri42825/AutoMD-SAXS` | `camlbrown/AutoMD-SAXS` | `AutoMD-SAXS-OpenMM` @ `4d4decc` | the `automd_saxs` CLI baked into the worker/runtime image |
-| Carbonara (source) | `/home/kri42825/carbonara-pseudoWaxsis` | (no git here) | n/a | the Carbonara runtime image build context |
+| Carbonara (source) | `/home/kri42825/carbonara-pseudoWaxsis` | (no git here) | n/a | build context for the Carbonara worker bake-in (`bilbomd-worker-carbonara.dockerfile`) + the standalone runtime image |
 
 `/home/kri42825/bilbomd` and `/home/kri42825/bilbomd-automd-saxs` are **two git
 worktrees of the same repository** (one shared `.git`), checked out to the two
@@ -307,11 +307,11 @@ This is the crux of "will it run in a k8s pod."
   auto-flex handlers, `carbonaraPreviewHandler.ts`, `carbonaraAutoFlexHandler.ts`)
   were **wired in S1**, so all 6 now honor `CARBONARA_EXEC=inprocess` and run
   in-pod. **[✅ DONE]**
-- Requires the Carbonara tools **baked into the worker image** (they currently live
-  in a separate `carbonara-allatom-runtime` image built `FROM
-  mambaorg/micromamba`, a **different base** from the worker). Baking a ~5 GB
-  micromamba tree into the CUDA worker image is the larger piece of work; the
-  alternative (k8s-Job-per-task from the existing image) is discussed in §9.
+- Requires the Carbonara tools **baked into the worker image** — **✅ now DONE
+  (task 9a)** via `infra/carbonara/bilbomd-worker-carbonara.dockerfile` (build
+  step 3, runbook §4.1), built + validated locally as the k8s non-root user. See
+  §6.3. The alternative (k8s-Job-per-task from the standalone image) in §9 is no
+  longer needed. **[✅ DONE]**
 
 ### 6.2 AutoMD-SAXS — effectively k8s-ready **[CONFIRMED]**
 
@@ -350,33 +350,44 @@ live** once the host `podman run` is removed.
   image-build time. You need that repo when you *build* the image; the cluster needs
   nothing from it at runtime.
 
-**Carbonara — ❌ NOT runnable from this branch as-is (packaging gap, not a code gap).**
-- The de-nesting **code** is complete (`inprocess`, 6/6). But `inprocess` runs the
+**Carbonara — ✅ runtime self-contained via 9a bake-in (DONE + validated 2026-08).**
+- The de-nesting **code** is complete (`inprocess`, 6/6). `inprocess` runs the
   Carbonara scripts + `convert_cg2all_carbonara` + `pyfoxs` + the C++ binaries
   **directly in the worker pod**, at `/opt/carbonara` + `/usr/local/bin`.
-- **No worker image on this branch contains the Carbonara runtime.** Of the 15
-  Dockerfiles, the only Carbonara image is `Dockerfile.carbonara-allatom-runtime`
-  — a **standalone** image `FROM mambaorg/micromamba` (two conda envs: Carbonara
-  py3.12 + cg2all py3.10, CPU `torch`), **not** worker-based. The combined worker
-  image is `bilbomd-worker + automd_saxs` only. So a Carbonara job on k8s would fail:
-  tools not found.
-- **The Carbonara library source is also not in the branch** — only the 4 wrapper
-  scripts (`carbonara_*.py`) are tracked. The `Carbonara/` library + `setupPython.sh`
-  + `CarbonaraDataTools.py` + C++ come from the external
-  `/home/kri42825/carbonara-pseudoWaxsis` at image-build time.
-- **To run Carbonara on k8s you need one of** (neither done):
-  - **9a — bake-in:** replay the Carbonara Dockerfile's install steps onto the
-    worker image (the worker base already ships conda), so `inprocess` finds the
-    tools in-pod. Fully buildable + testable locally; no cluster RBAC. Cost: a large
-    (~17 GB) worker image + build/debug time.
-  - **9b — k8s-Job-per-task:** reuse the existing Carbonara image unchanged; the
-    worker creates a k8s Job per step (PVC-mounted) instead of `podman run`. Cost: a
-    ServiceAccount + RBAC (create/watch Jobs), a new `k8sjob` exec path + a k8s
-    client dependency; **cannot be validated without a cluster.**
+- **The Carbonara runtime is now baked into the worker image** by
+  `infra/carbonara/bilbomd-worker-carbonara.dockerfile` — the **third** build step
+  (branch worker → +automd-saxs → +carbonara; see runbook §4.1). It layers the
+  Carbonara py3.12 env + isolated cg2all py3.10 env + the C++ engine into
+  `/opt/conda` **without reordering the global PATH**, so the worker's own OpenMM
+  Python (`/opt/envs/openmm`) and the `automd-saxs` CLI are never shadowed. The
+  `CARBONARA_*` env is baked in, so `inprocess` resolves the tools with no extra
+  wiring beyond `CARBONARA_EXEC=inprocess`.
+- **Validated locally (2026-08):** built on the combined worker image
+  (`worker-full:test`, ~23 GB) and run **as the k8s non-root user 62704**. Both
+  toolchains coexist and the worker's tools are unshadowed:
+  `automd-saxs` ✅ · default `python` → `/opt/envs/openmm` ✅ ·
+  `carbonara-python` + `CarbonaraDataTools`/`biobox`/`torch` ✅ · `pyfoxs` ✅ ·
+  `convert_cg2all_carbonara` ✅ · C++ engine compiled at
+  `/opt/carbonara/build/bin/{predictStructureQvary,generate_structure,single_fit}`
+  (exactly where the runner resolves `CARBONARA_ROOT/build/bin/…`) ✅ ·
+  `multi_foxs` ✅.
+- **Build-time caveat (same shape as AutoMD-SAXS):** the Carbonara **library
+  source is not in this branch** — only the 4 wrapper scripts (`carbonara_*.py`)
+  are tracked. The `Carbonara/` library + `setupPython.sh` + `CarbonaraDataTools.py`
+  + C++ sources come from the external `/home/kri42825/carbonara-pseudoWaxsis` as
+  build context (see `infra/carbonara/README.md`). You need that source when you
+  *build* the image; the cluster needs nothing from it at runtime.
+- **9b — k8s-Job-per-task** remains an alternative (reuse the standalone Carbonara
+  image, worker creates a k8s Job per step) but is **not needed** now that 9a is
+  done; it would add a ServiceAccount + RBAC + a `k8sjob` exec path and cannot be
+  validated without a cluster. Revisit only if the ~23 GB image size or per-job
+  isolation later warrants it.
 
-**Verdict:** a first k8s deploy of **AutoMD-SAXS alone** works from this branch. For
-**Carbonara too**, complete 9a (recommended — locally provable, no RBAC) or 9b before
-the deploy. See the options analysis accompanying this audit.
+**Verdict:** a first k8s deploy of **BOTH pipelines** works from this branch. The
+worker image built per runbook §4.1 (all three steps) contains AutoMD-SAXS **and**
+Carbonara, both proven to run in one image as the deployed non-root user. Remaining
+work is cluster-side values (registry, storage classes, GPU) + the one end-to-end
+job run once deployed — no more packaging gaps.
 
 ---
 
@@ -498,21 +509,23 @@ Grouped by k8s severity. "Committed code" = must be handled by image/config;
 - Shared **RWX PVC** at `/bilbomd/uploads` mounted by backend + worker.
 - Everything else (Mongo, Redis, backend, UI, ingress) as the chart already defines.
 
-**Carbonara execution — two viable paths (decide with the admin):**
+**Carbonara execution — 9a is now DONE; 9b kept only as a future alternative:**
 
-- **9a. Bake-in + `inprocess` (fewest moving parts at run time).** The `inprocess`
-  wiring is **done (6/6, §1a)**; the remaining cost is merging the Carbonara
-  micromamba runtime into the worker image (a large ~5 GB image; one build).
-- **9b. k8s-Job-per-task (keeps Carbonara modular).** The worker creates a k8s Job
-  from the existing `carbonara-allatom-runtime` image per step, mounting the RWX
-  PVC. Cost: a ServiceAccount + RBAC (create/watch Jobs) and a code path to
-  submit/await Jobs; the current code has no such path yet.
+- **9a. Bake-in + `inprocess` (chosen — fewest moving parts at run time). ✅ DONE.**
+  The `inprocess` wiring is done (6/6, §1a) and the Carbonara runtime is now baked
+  into the worker image by `infra/carbonara/bilbomd-worker-carbonara.dockerfile`
+  (build step 3, runbook §4.1). Built + validated locally as the k8s non-root user
+  — both toolchains coexist in one ~23 GB image (§6.3).
+- **9b. k8s-Job-per-task (keeps Carbonara modular) — NOT needed now.** The worker
+  would create a k8s Job from the standalone `carbonara-allatom-runtime` image per
+  step, mounting the RWX PVC. Cost: a ServiceAccount + RBAC (create/watch Jobs) and
+  a net-new submit/await code path. Deferred; revisit only if the image size or
+  per-job isolation later warrants it.
 
-> **Recommendation:** **AutoMD-SAXS via bake-in — DONE** (combined image proven,
-> §1a). **Carbonara via 9a** for the first deploy (the `inprocess` machinery is done;
-> only the ~5 GB runtime bake-in remains) vs 9b (net-new code). Revisit 9b later if
-> image size / isolation warrants. AutoMD-SAXS-only is a valid first k8s deploy with
-> no Carbonara image work at all. **[INFERRED]**
+> **Recommendation:** **Both pipelines via bake-in — DONE.** AutoMD-SAXS (§1a) and
+> Carbonara (9a, §6.3) are baked into the single worker image built per runbook
+> §4.1, proven to run together as the deployed non-root user. First k8s deploy can
+> ship **both** pipelines; no Carbonara image work remains. **[CONFIRMED locally]**
 
 **Option B (later, if GPU-in-k8s is unavailable): k8s web tier + Diamond HPC/Slurm
 compute** — mirrors NERSC, but needs a Diamond SFAPI-equivalent submission bridge
@@ -568,15 +581,16 @@ deliverable.** Do **not** run them until you approve.
 2. ✅ **Create the integration branch** off `automd-saxs-worker` + cherry-pick
    `914769d3` — done and pushed.
 3. ✅ **Build one combined worker image** — built + verified (`automd-saxs --help`,
-   FoXS, `v0.1.1`); ⚠ must use the **two-step** build (§1a). Pushing to the Diamond
-   registry is admin-gated.
+   FoXS, `v0.1.1`); ⚠ must use the **three-step** build (branch worker → +automd →
+   +carbonara; §1a / runbook §4.1). Pushing to the Diamond registry is admin-gated.
 4. ✅ **Draft `values-diamond.yaml`** — committed, placeholder-driven.
 5. ✅ **Assemble the meeting facts list** (`K8S_MEETING_CHECKLIST.md`).
 
 **P1 — should do if time permits:**
 
 6. ✅ **Finish Carbonara `inprocess`** for the 2 preview/autoflex handlers — done
-   (6/6). *(9a vs 9b — bake-in vs k8s-Job — still a decision for enabling Carbonara.)*
+   (6/6). *(9a bake-in — Carbonara runtime baked into the worker image — now DONE +
+   validated locally, §6.3; 9b k8s-Job deferred as unnecessary.)*
 7. ✅ **Liveness/readiness probes + resource requests** — added to the Helm templates.
 8. ✅ **Reconcile the worker image version** — one pinned tag + the two-step build
    documented (S3). *(Dev/prod/compose NERSC tags left as-is; the Diamond build uses
@@ -627,9 +641,10 @@ Phase-2/3 work in §1a.
   shim; hardcoded config defaults; image version skew; security contexts;
   NERSC-specific storage/registry.
 - **[RESOLVED since audit]:** the `914769d3` cherry-pick was clean; the combined
-  worker image builds + runs `automd-saxs`; Carbonara `inprocess` is now 6/6; all
-  Helm changes render NERSC-unchanged + Diamond-startable (verified with
-  `helm template`).
+  worker image builds + runs `automd-saxs`; Carbonara `inprocess` is now 6/6; the
+  Carbonara runtime is now baked into the worker image (9a) and validated locally
+  as the k8s non-root user — both pipelines run in one image (§6.3); all Helm
+  changes render NERSC-unchanged + Diamond-startable (verified with `helm template`).
 - **[INFERRED]:** recommended branch strategy (now executed); Option A over B.
 - **[VERIFY — still open]:** whether the worker actually consumes the Helm ConfigMap
   `REDIS_HOST` at runtime; Diamond GPU/storage/registry/ingress/UID facts; whether

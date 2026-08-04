@@ -112,6 +112,9 @@ auth:
 # --- pipeline de-nesting for k8s (template edit #2, now applied via the ConfigMap) ---
 # These inject CARBONARA_EXEC + AUTOMD_SAXS_BIN into the bilbomd-config ConfigMap.
 # CARBONARA_EXEC=inprocess is REQUIRED on k8s (else the worker tries `podman run`).
+# With 9a done, the worker image bakes in the Carbonara tools AND the CARBONARA_*
+# paths (CARBONARA_PYTHON_BIN, CARBONARA_ROOT, CARBONARA_RUNNER, CARBONARA_CG2ALL_EXEC,
+# CARBONARA_MULTIFOXS_BIN), so inprocess resolves them with no extra ConfigMap keys.
 pipelines:
   carbonaraExec: inprocess
   automdSaxsBin: /opt/envs/openmm/bin/automd-saxs
@@ -128,8 +131,11 @@ uploads: 'uploads'
 working_dir: ''
 
 # --- images: point at the Diamond registry + the ONE pinned combined worker tag ---
-# NOTE: worker.repository is the COMBINED worker image (worker base + automd_saxs
-# v0.1.1), built per K8S_DEPLOYMENT_RUNBOOK.md §4.1. Use ONE tag everywhere (S3).
+# NOTE: worker.repository is the COMBINED worker image = worker base + automd_saxs
+# v0.1.1 + the Carbonara runtime baked in (task 9a), built per
+# K8S_DEPLOYMENT_RUNBOOK.md §4.1 (three steps: branch worker -> +automd -> +carbonara).
+# Both pipelines run in-pod from this ONE ~23 GB image (validated locally as the k8s
+# non-root user). Use ONE tag everywhere (S3).
 
 mongo:
   name: mongo

@@ -102,8 +102,15 @@ BilboMD is ~5 images: **ui, backend, worker, mongo, redis** (mongo/redis are
 stock images — no build). Only **worker** carries the science tools; that is where
 both pipelines attach.
 
-**4.1 Build the combined worker image — TWO steps (must build the BRANCH worker,
-then layer AutoMD-SAXS).**
+**4.1 Build the combined worker image — up to THREE steps (build the BRANCH
+worker, layer AutoMD-SAXS, then — if deploying Carbonara — layer Carbonara).**
+
+> Steps 1–2 produce the AutoMD-SAXS-capable worker. Step 3 (task "9a") bakes the
+> Carbonara runtime **into that same worker image** so Carbonara runs
+> `inprocess` in the worker pod (no nested container). Do step 3 only if you are
+> deploying the Carbonara pipeline; otherwise tag step 2's output as the registry
+> worker image and skip to 4.2. Built + validated locally 2026-08 (see §6.3 of
+> the readiness audit).
 
 > ⚠ **Critical (S3).** `infra/automd-saxs/Dockerfile` only *layers* AutoMD-SAXS onto
 > an existing worker image — it does **not** rebuild the worker JS. If you layer it
@@ -126,26 +133,46 @@ podman build -f apps/worker/bilbomd-worker.dockerfile \
 # STEP 2: layer AutoMD-SAXS v0.1.1 onto the BRANCH worker from step 1.
 # Check out the AutoMD-SAXS repo at the pinned tag first for reproducibility:
 #   git -C /home/kri42825/AutoMD-SAXS switch --detach v0.1.1
+# If NOT deploying Carbonara, replace the -t below with the registry worker tag
+# (<DIAMOND_REGISTRY>/bilbomd-worker:<IMAGE_TAG>) and skip step 3.
 podman build -f infra/automd-saxs/Dockerfile \
   --build-arg BASE_IMAGE=localhost/bilbomd-worker-branch:<IMAGE_TAG> \
-  -t <DIAMOND_REGISTRY>/bilbomd-worker:<IMAGE_TAG> \
+  -t localhost/bilbomd-worker-combined:<IMAGE_TAG> \
   /home/kri42825/AutoMD-SAXS
 ```
 
 ```bash
-# RUN IN: anywhere
-# What: sanity-check the CLI + that this is the branch worker (grep a branch-only string)
-podman run --rm <DIAMOND_REGISTRY>/bilbomd-worker:<IMAGE_TAG> \
-  /opt/envs/openmm/bin/automd-saxs --help
-podman run --rm <DIAMOND_REGISTRY>/bilbomd-worker:<IMAGE_TAG> \
-  bash -lc "grep -rl inProcessCommandFromArgs /app >/dev/null && echo 'branch worker (inprocess present) OK'"
+# RUN IN: a build dir containing Carbonara/ + the 4 wrapper scripts + the dockerfile
+#   (build CONTEXT = that dir; see infra/carbonara/README.md for the exact layout)
+# STEP 3 (only if deploying Carbonara): layer the Carbonara runtime onto the
+# combined worker from step 2, so Carbonara runs inprocess in the worker pod.
+# This is the FINAL deploy worker image. Large (~23GB); needs several GB of free
+# disk + a writable TMPDIR on a non-full filesystem (podman stages layers there):
+#   export TMPDIR=/path/on/big/disk/podman-tmp && mkdir -p "$TMPDIR"
+podman build -f bilbomd-worker-carbonara.dockerfile \
+  --build-arg BASE_IMAGE=localhost/bilbomd-worker-combined:<IMAGE_TAG> \
+  -t <DIAMOND_REGISTRY>/bilbomd-worker:<IMAGE_TAG> .
 ```
 
-> **One tag, everywhere (S3).** Use the SAME `<IMAGE_TAG>` for step 1, step 2, and
-> the `worker.image.tag` in `values-diamond.yaml`, so worker code + AutoMD-SAXS
-> layer + deployed image are in lockstep. (Future simplification: install
-> AutoMD-SAXS via `pip install "automd-saxs @ git+https://github.com/camlbrown/AutoMD-SAXS@v0.1.1"`
-> inside `bilbomd-worker.dockerfile` to collapse this to one build.)
+```bash
+# RUN IN: anywhere
+# What: sanity-check BOTH toolchains + that this is the branch worker.
+# Run as the k8s non-root user (--user 62704) to match the deployed securityContext.
+podman run --rm --user 62704 <DIAMOND_REGISTRY>/bilbomd-worker:<IMAGE_TAG> bash -lc '
+  /opt/envs/openmm/bin/automd-saxs --help >/dev/null && echo "automd-saxs OK"
+  which python | grep -q /opt/envs/openmm && echo "worker python unshadowed OK"
+  cd /opt/carbonara && carbonara-python -c "import CarbonaraDataTools, biobox, torch" && echo "carbonara py OK"
+  convert_cg2all_carbonara --help >/dev/null && echo "cg2all OK"
+  test -x /opt/carbonara/build/bin/predictStructureQvary && echo "carbonara C++ engine OK"
+  grep -rl inProcessCommandFromArgs /app >/dev/null && echo "branch worker (inprocess present) OK"'
+# (If you skipped step 3, drop the carbonara/cg2all/C++ lines.)
+```
+
+> **One tag, everywhere (S3).** Use the SAME `<IMAGE_TAG>` for steps 1–3 and the
+> `worker.image.tag` in `values-diamond.yaml`, so worker code + AutoMD-SAXS layer
+> + Carbonara layer + deployed image are in lockstep. (Future simplification:
+> install AutoMD-SAXS via `pip install "automd-saxs @ git+…@v0.1.1"` inside
+> `bilbomd-worker.dockerfile` to collapse steps 1–2 into one build.)
 
 **4.2 Build backend and UI (unchanged from upstream).**
 
@@ -156,12 +183,15 @@ podman build -f apps/backend/bilbomd-backend.dockerfile -t <DIAMOND_REGISTRY>/bi
 podman build -f apps/ui/bilbomd-ui.dockerfile        -t <DIAMOND_REGISTRY>/bilbomd-ui:<IMAGE_TAG> .
 ```
 
-**4.3 (Optional, only if deploying Carbonara now) build the Carbonara runtime image.**
-Needs the Carbonara source as build context.
+**4.3 (Legacy / NOT for k8s) standalone Carbonara runtime image.**
+Superseded by **§4.1 step 3**, which bakes Carbonara into the worker image for
+`inprocess` mode. The standalone image below is invoked via `podman run` — a
+**nested-container anti-pattern on k8s** (a pod launching a container). Build it
+only for single-host/local use, never for the Diamond deploy.
 
 ```bash
 # RUN IN: /home/kri42825/bilbomd
-# What: build the carbonara runtime (requires Carbonara/ source in context)
+# What: build the standalone carbonara runtime (requires Carbonara/ source in context)
 # ⚠ VERIFY the exact context layout the Dockerfile expects (COPY Carbonara ...)
 podman build -f infra/carbonara/Dockerfile.carbonara-allatom-runtime \
   -t <DIAMOND_REGISTRY>/carbonara-allatom-runtime:<IMAGE_TAG> \
