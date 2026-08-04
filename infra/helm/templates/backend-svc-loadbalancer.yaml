@@ -4,7 +4,7 @@ metadata:
   annotations:
     field.cattle.io/targetWorkloadIds: '["bilbomd/backend"]'
   name: backend-loadbalancer
-  namespace: bilbomd
+  namespace: {{ .Values.namespace }}
 spec:
   allocateLoadBalancerNodePorts: true
   externalTrafficPolicy: Cluster

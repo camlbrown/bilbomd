@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: bilbomd-config
-  namespace: bilbomd
+  name: {{ .Values.namespace }}-config
+  namespace: {{ .Values.namespace }}
 data:
   BILBOMD_BACKEND_HOST: localhost
   BILBOMD_BACKEND_PORT: '3501'
@@ -54,4 +54,16 @@ data:
   {{- with .automdSaxsBin }}
   AUTOMD_SAXS_BIN: '{{ . }}'
   {{- end }}
+  {{- end }}
+  {{- if .Values.persistence }}
+  {{- /* Writable HOME + cache dirs for the non-root worker pod. A k8s numeric
+         runAsUser (62704) has no /etc/passwd HOME, so HOME defaults to '/', which
+         is NOT writable. Carbonara's micromamba-run wrappers (carbonara-python,
+         convert_cg2all_carbonara) need $HOME/.cache/mamba to acquire a lock, and
+         matplotlib/torch need a writable cache dir. Without these, EVERY in-pod
+         Carbonara/cg2all call fails ('mamba run' failed to lock). Mirrors the
+         MPLCONFIGDIR/XDG_CACHE_HOME the docker-compose deploy already sets. */}}
+  HOME: /tmp
+  MPLCONFIGDIR: /tmp/matplotlib
+  XDG_CACHE_HOME: /tmp/cache
   {{- end }}

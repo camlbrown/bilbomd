@@ -267,7 +267,7 @@ kubectl -n <NAMESPACE> create secret generic mongo-secrets \
 kubectl -n <NAMESPACE> create secret generic bilbomd-secrets \
   --from-literal=MONGO_USERNAME='bilbomd-backend-user' \
   --from-literal=MONGO_PASSWORD='<MONGO_APP_PASSWORD>' \
-  --from-literal=TOKEN_SECRET='<...>' \
+  --from-literal=ACCESS_TOKEN_SECRET='<...>' \
   --from-literal=REFRESH_TOKEN_SECRET='<...>' \
   --from-literal=SESSION_SECRET='<...>' \
   --from-literal=HASH_IP_SALT='<...>' \

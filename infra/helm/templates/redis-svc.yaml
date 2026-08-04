@@ -4,7 +4,7 @@ metadata:
   annotations:
     field.cattle.io/targetWorkloadIds: '["bilbomd/redis"]'
   name: redis
-  namespace: bilbomd
+  namespace: {{ .Values.namespace }}
 spec:
   internalTrafficPolicy: Cluster
   ipFamilies:

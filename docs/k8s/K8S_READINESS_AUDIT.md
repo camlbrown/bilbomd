@@ -430,6 +430,52 @@ worker's in-pod execution (`inprocess` + real job paths) is what the k8s work
 changed and is now validated for both pipelines. Remaining work is cluster-side
 values only (registry, storage classes, GPU) — no packaging or execution gaps.
 
+### 6.4 Pre-deploy bug sweep (2026-08) — 3 k8s-failure bugs found + fixed
+
+A systematic multi-agent audit (config startup / runtime non-root+network+path /
+Helm data-flow / nested-container) after the `/job` fix. The Helm job-data flow
+(shared RWX PVC, identical `/bilbomd/uploads` on backend+worker, `fsGroup 104818`),
+probes, and container de-nesting (6/6 inprocess, no un-stripped podman) all verified
+**correct**. Three real k8s-failure bugs were found and fixed; two minor items noted.
+
+- **[FIXED — WOULD-FAIL] Non-root `HOME` breaks Carbonara's micromamba wrappers.**
+  `carbonara-python` / `convert_cg2all_carbonara` are `micromamba run` wrappers that
+  need a writable `$HOME/.cache/mamba` to acquire a lock. A k8s numeric
+  `runAsUser: 62704` has no `/etc/passwd` HOME, so HOME defaults to `/` (unwritable)
+  — and the image sets no HOME. Verified: with `HOME=/` the runner dies immediately
+  (`'mamba run' failed to lock … /.cache/mamba/proc: Permission denied`, exit 1);
+  EVERY Carbonara/cg2all in-pod call would fail. The local podman e2e tests missed
+  it because podman set `HOME=/home/bilbo` via a passwd lookup that k8s does not do.
+  Fix: the ConfigMap now sets `HOME=/tmp`, `MPLCONFIGDIR=/tmp/matplotlib`,
+  `XDG_CACHE_HOME=/tmp/cache` (Diamond-gated), mirroring what docker-compose already
+  set. Re-verified: full calmodulin job completes clean as 62704 with `HOME=/tmp`.
+  (This also covers matplotlib — `fittingAnalysis`/`CarbonaraDataTools` import it in
+  the results-analysis + autoflex steps — and torch/dgl caches.)
+- **[FIXED — WOULD-FAIL if namespace ≠ `bilbomd`] Hardcoded namespace in templates.**
+  `bilbomd-configmaps.yaml` (+ `ui-configmaps.yaml`, 8 service/ingress templates)
+  hardcoded `namespace: bilbomd` and `name: bilbomd-config`, while the deployments
+  reference `{{ .Values.namespace }}-config`. If the Diamond admin used any namespace
+  other than `bilbomd`, the `configMapRef` (`optional: false`) would not resolve →
+  `DATA_VOL` never injected → CrashLoopBackOff, and objects would render into the
+  wrong namespace. Fixed by templating `{{ .Values.namespace }}` everywhere (and the
+  two ConfigMap names). NERSC-safe: `values.yaml` has `namespace: bilbomd`, so it
+  renders byte-identical.
+- **[FIXED — WOULD-CRASH-STARTUP] Runbook auth-secret key name.**
+  The backend reads `ACCESS_TOKEN_SECRET` at boot via a throwing `getEnvVar`
+  (`authTokens.ts:7`, `verifyJWT.ts:16`), but the runbook told operators to create
+  `bilbomd-secrets` with `TOKEN_SECRET` — wrong key → backend CrashLoopBackOff.
+  Fixed the runbook to `ACCESS_TOKEN_SECRET`. (The `-secrets` Secret is created
+  out-of-band and required `optional: false`; ensure it also has `REFRESH_TOKEN_SECRET`
+  + `SESSION_SECRET`, which the runbook already lists.)
+- **[NOTE — minor] backend `/healthcheck` returns 503 until Mongo connects** and is
+  wired as BOTH readiness and liveness; a slow/cold Mongo (> ~90 s) could restart the
+  backend. Consider a `startupProbe` or a Mongo-independent liveness path. Not a
+  blocker if Mongo starts promptly.
+- **[NOTE — pre-existing, low reach] `CarbonaraDataTools.getFlexibility`** has a
+  `.npy`-PAE branch that `np.load('paerank_2.npy')` (hardcoded name, ignores its arg).
+  Only reachable via a `.npy` PAE file; the JSON-PAE path the UI produces is clean.
+  Upstream Carbonara bug, not k8s-specific.
+
 ---
 
 ## 7. Local-development assumptions that must be removed/parameterised

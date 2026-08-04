@@ -6,5 +6,5 @@ data:
   VITE_MODE: "{{ .Values.ui.mode }}"
 kind: ConfigMap
 metadata:
-  name: bilbomd-ui-config
-  namespace: bilbomd
+  name: {{ .Values.namespace }}-ui-config
+  namespace: {{ .Values.namespace }}

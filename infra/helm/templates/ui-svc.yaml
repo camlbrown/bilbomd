@@ -4,7 +4,7 @@ metadata:
   annotations:
     field.cattle.io/targetWorkloadIds: '["bilbomd/ui"]'
   name: ui
-  namespace: bilbomd
+  namespace: {{ .Values.namespace }}
 spec:
   internalTrafficPolicy: Cluster
   ipFamilies:
