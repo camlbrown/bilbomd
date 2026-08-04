@@ -476,6 +476,24 @@ probes, and container de-nesting (6/6 inprocess, no un-stripped podman) all veri
   Only reachable via a `.npy` PAE file; the JSON-PAE path the UI produces is clean.
   Upstream Carbonara bug, not k8s-specific.
 
+**Results delivery on k8s (how users get their output):** the worker writes results
+to the shared uploads PVC at `DATA_VOL/<uuid>/` and bundles them into
+`results-<uuidPrefix>.tar.gz`; the backend streams that archive from the SAME PVC via
+the authenticated `GET /jobs/:id/results` (`res.download()`), and the UI "Download
+Results" button fetches it. Per-job UUID, multi-user by design — no local-dir
+dependency (the demo's `infra/uploads` dir was just where `DATA_VOL` pointed locally).
+- **[FIXED — download 404] Carbonara never created its archive.** AutoMD-SAXS/multi/
+  sans create `results-<uuid>.tar.gz`; the Carbonara pipeline did not, so
+  `downloadJobResults` 404'd and the CarbonaraDownloadPanel button did nothing (locally
+  and on k8s). Fixed: the pipeline now calls `createResultsArchive(workDir, uuid)` after
+  the analysis step (non-fatal). Verified the archive is produced from a real completed
+  job.
+- **[DECISION FOR THE MEETING — access policy] `downloadJobResults` authenticates the
+  requester (verifyJWT) but does NOT check they OWN the job** — any logged-in user with
+  a job's ObjectId can download its results. Acceptable for a trusted internal user
+  base; for a broader multi-user service, add an ownership/role check. Not a startup or
+  execution blocker — a policy choice to confirm with the admin.
+
 ---
 
 ## 7. Local-development assumptions that must be removed/parameterised
