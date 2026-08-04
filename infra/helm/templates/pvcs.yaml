@@ -1,0 +1,67 @@
+{{- /*
+  Optional PersistentVolumeClaims (Phase 2 task S4).
+
+  The chart historically assumed `mongodb-volume` / `redis-volume` PVCs were
+  pre-created out of band, and the shared job volume was a hostPath onto NERSC's
+  CFS. On Diamond there is no CFS hostPath, so we need real PVCs (a ReadWriteMany
+  claim for the shared job/results volume, and ReadWriteOnce claims for Mongo and
+  Redis).
+
+  These templates render ONLY when `.Values.persistence.create` is true, so the
+  existing NERSC deploy (which has no `persistence` key) is completely unaffected.
+  Set them in values-diamond.yaml. Nested `if` guards avoid a nil-pointer when the
+  `persistence` key is absent.
+
+  NOTE: creating the uploads PVC does not by itself mount it — the worker/backend
+  deployments still template the uploads volume as a hostPath (required template
+  edit #1 in values-diamond.yaml). Switch that volume to
+  `persistentVolumeClaim: { claimName: bilbomd-uploads }` to use this claim.
+*/ -}}
+{{- if .Values.persistence }}
+{{- if .Values.persistence.create }}
+{{- with .Values.persistence.uploads }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .claimName | default "bilbomd-uploads" }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  accessModes:
+    - {{ .accessMode | default "ReadWriteMany" }}
+  storageClassName: {{ .storageClass }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- with .Values.persistence.mongo }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .claimName | default "mongodb-volume" }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  accessModes:
+    - {{ .accessMode | default "ReadWriteOnce" }}
+  storageClassName: {{ .storageClass }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- with .Values.persistence.redis }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .claimName | default "redis-volume" }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  accessModes:
+    - {{ .accessMode | default "ReadWriteOnce" }}
+  storageClassName: {{ .storageClass }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- end }}
+{{- end }}

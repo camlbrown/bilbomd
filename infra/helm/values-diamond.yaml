@@ -57,6 +57,29 @@
 # --- overrides of values.yaml top-level keys ---
 namespace: <NAMESPACE>                 # e.g. bilbomd
 docker_registry: <DIAMOND_REGISTRY>    # e.g. registry.diamond.ac.uk/bilbomd
+
+# --- persistent volumes (Phase 2 task S4) ---
+# Renders the optional PVC templates (templates/pvcs.yaml). NERSC has no
+# `persistence` key so it renders nothing there. `create: true` provisions the
+# three claims on install. Set `create: false` (or apply the PVCs by hand per
+# K8S_DEPLOYMENT_RUNBOOK.md §7) if the admin pre-creates them.
+persistence:
+  create: true
+  uploads:                              # shared job/results volume (backend + worker)
+    claimName: bilbomd-uploads
+    accessMode: ReadWriteMany
+    storageClass: <RWX_STORAGE_CLASS>
+    size: <UPLOADS_SIZE>                # e.g. 500Gi
+  mongo:
+    claimName: mongodb-volume
+    accessMode: ReadWriteOnce
+    storageClass: <RWO_STORAGE_CLASS>
+    size: <MONGO_SIZE>                  # e.g. 50Gi
+  redis:
+    claimName: redis-volume
+    accessMode: ReadWriteOnce
+    storageClass: <RWO_STORAGE_CLASS>
+    size: <REDIS_SIZE>                  # e.g. 5Gi
 # nersc_repo / cfs_dir / pscratch / sfapi are inherited from values.yaml but are
 # NOT USED once storage is switched to a PVC (edit #1) and USE_NERSC=false.
 
