@@ -189,7 +189,9 @@ const AutoMDSAXSResults = ({ jobId }: AutoMDSAXSResultsProps) => {
     ? params.ligandRmsf
     : []
   // Distinct bound-ligand instances that have RMSF data (one chart each).
-  const rmsfLigands = Array.from(new Set(ligandRmsf.map((e) => e.ligand)))
+  const rmsfLigands = Array.from(
+    new Set(ligandRmsf.filter((e) => e.ligand).map((e) => e.ligand))
+  )
   // Per-ligand chart rows: x = atom index, one rmsf_<repeat> column per repeat.
   const rmsfRows = (ligand: string): Record<string, number | string>[] => {
     const entries = ligandRmsf.filter((e) => e.ligand === ligand)

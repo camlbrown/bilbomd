@@ -162,8 +162,11 @@ const NewAutoMDSaxsJobForm = () => {
         state: {
           // The File is structured-cloneable, so it survives in-session router
           // state (used by the review page's "Run MD" to submit the real job).
+          // The SAXS .dat (optional) is carried the same way so it reaches the MD
+          // job — prep itself doesn't need it.
           pdbFile: values.pdb_file,
-          settings: { ...values, pdb_file: undefined },
+          datFile: values.dat_file,
+          settings: { ...values, pdb_file: undefined, dat_file: undefined },
           keepIons,
           keepAgents,
           keepWaters,

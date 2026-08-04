@@ -56,7 +56,9 @@ export const processAutoMDSaxsPrep = async (
 
   try {
     await fs.ensureDir(previewDir)
-    const pdbPath = path.join(previewDir, d.pdbFile)
+    // basename guards against a stored filename with path components escaping
+    // previewDir (defense in depth; the controller already sanitises on upload).
+    const pdbPath = path.join(previewDir, path.basename(d.pdbFile))
     const jobConfig = buildAutoMDSaxsConfig({
       jobName: d.previewId,
       pdbPath,

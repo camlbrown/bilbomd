@@ -49,7 +49,10 @@ export const createAutoMDSaxsPrep = async (
     await fs.ensureDir(previewDir)
     const storage = multer.diskStorage({
       destination: (_req, _file, cb) => cb(null, previewDir),
-      filename: (_req, file, cb) => cb(null, file.originalname.toLowerCase())
+      // path.basename strips directory components so a crafted filename can't
+      // escape previewDir (defense in depth).
+      filename: (_req, file, cb) =>
+        cb(null, path.basename(file.originalname.toLowerCase()))
     })
     const upload = multer({ storage }).fields([{ name: 'pdb_file', maxCount: 1 }])
 
@@ -70,7 +73,7 @@ export const createAutoMDSaxsPrep = async (
         }
         const data: AutoMDSaxsPrepJobData = {
           previewId,
-          pdbFile: pdbFiles[0]!.originalname.toLowerCase(),
+          pdbFile: path.basename(pdbFiles[0]!.originalname.toLowerCase()),
           system: (req.body?.system as string) || undefined,
           forceField: (req.body?.force_field as string) || undefined,
           waterModel: (req.body?.water_model as string) || undefined,

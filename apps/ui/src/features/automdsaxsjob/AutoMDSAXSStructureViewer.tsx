@@ -57,6 +57,7 @@ const AutoMDSAXSStructureViewer = ({
   const parent = createRef<HTMLDivElement>()
   const pluginRef = useRef<PluginUIContext | null>(null)
   const hasInit = useRef(false)
+  const mounted = useRef(true)
   // Per-residue-name components (transform refs), so each species can be shown or
   // hidden independently without re-parsing the structure.
   const compRefs = useRef<Record<string, { comp: string; reps: string[] }>>({})
@@ -191,13 +192,14 @@ const AutoMDSAXSStructureViewer = ({
         plugin.managers.camera.reset()
       }
     } catch (err) {
-      setError(
-        `Could not display the structure: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      )
+      if (mounted.current)
+        setError(
+          `Could not display the structure: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
     } finally {
-      setLoading(false)
+      if (mounted.current) setLoading(false)
     }
   }
 
@@ -244,6 +246,7 @@ const AutoMDSAXSStructureViewer = ({
     }
     void init()
     return () => {
+      mounted.current = false
       pluginRef.current?.dispose()
       pluginRef.current = null
       hasInit.current = false

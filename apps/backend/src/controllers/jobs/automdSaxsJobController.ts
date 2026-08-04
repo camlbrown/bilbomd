@@ -24,7 +24,9 @@ const createAutoMDSaxsJob = async (req: Request, res: Response) => {
         cb(null, jobDir)
       },
       filename: function (req, file, cb) {
-        cb(null, file.originalname.toLowerCase())
+        // path.basename strips any directory components a crafted filename might
+        // carry, so the upload can't escape the job dir (defense in depth).
+        cb(null, path.basename(file.originalname.toLowerCase()))
       }
     })
 

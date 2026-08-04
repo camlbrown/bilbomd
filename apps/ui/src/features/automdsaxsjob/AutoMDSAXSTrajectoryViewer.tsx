@@ -46,6 +46,7 @@ const AutoMDSAXSTrajectoryViewer = ({
   const parent = createRef<HTMLDivElement>()
   const pluginRef = useRef<PluginUIContext | null>(null)
   const hasInit = useRef(false)
+  const mounted = useRef(true)
   const [repeat, setRepeat] = useState<number>(repeats[0] ?? 1)
   const [loading, setLoading] = useState(false)
   const [playing, setPlaying] = useState(false)
@@ -108,9 +109,10 @@ const AutoMDSAXSTrajectoryViewer = ({
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      setError(`Could not load trajectory for repeat ${rep}: ${msg}`)
+      if (mounted.current)
+        setError(`Could not load trajectory for repeat ${rep}: ${msg}`)
     } finally {
-      setLoading(false)
+      if (mounted.current) setLoading(false)
     }
   }
 
@@ -177,12 +179,24 @@ const AutoMDSAXSTrajectoryViewer = ({
     void init()
 
     return () => {
+      mounted.current = false
       pluginRef.current?.dispose()
       pluginRef.current = null
       hasInit.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Keep the selected repeat valid if the repeats prop changes (e.g. a repeat
+  // finishes and the set updates) so the toggle never loses its selection.
+  useEffect(() => {
+    if (repeats.length && !repeats.includes(repeat)) {
+      const next = repeats[0]!
+      setRepeat(next)
+      void loadRepeat(next)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repeats])
 
   const handleRepeat = (_: unknown, value: number | null) => {
     if (value == null || value === repeat) return

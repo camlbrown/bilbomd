@@ -28,6 +28,7 @@ import AutoMDSAXSStructureViewer from './AutoMDSAXSStructureViewer'
 
 interface ReviewState {
   pdbFile?: File
+  datFile?: File
   settings?: Record<string, unknown>
   keepIons?: boolean
   keepAgents?: boolean
@@ -90,6 +91,9 @@ const AutoMDSAXSReviewPage = () => {
     form.append('bilbomd_mode', 'automd-saxs')
     form.append('title', String(s.title ?? 'AutoMD-SAXS job'))
     form.append('pdb_file', state.pdbFile)
+    // Optional experimental SAXS data — without this the job runs MD only (no
+    // FoXS/MultiFoXS analysis).
+    if (state.datFile instanceof File) form.append('dat_file', state.datFile)
     form.append('system', String(s.system ?? 'Protein'))
     form.append('force_field', String(s.force_field ?? 'amber14'))
     form.append('water_model', String(s.water_model ?? 'tip3p'))
