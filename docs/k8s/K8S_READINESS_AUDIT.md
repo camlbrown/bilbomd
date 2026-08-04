@@ -401,6 +401,19 @@ live** once the host `podman run` is removed.
   + C++ sources come from the external `/home/kri42825/carbonara-pseudoWaxsis` as
   build context (see `infra/carbonara/README.md`). You need that source when you
   *build* the image; the cluster needs nothing from it at runtime.
+- **`inprocess` `/job` path fix (worker code, 2026-08):** a GUI-submission check
+  found that Carbonara built every job path under the hardcoded `/job` bind-mount
+  prefix. In `podman` mode the worker bind-mounts the job dir at `/job` so that
+  resolves; in `inprocess` (k8s) there is **no** bind mount, so the runner looked
+  for `/job/job.json` and failed (`job JSON does not exist`). Fixed by threading a
+  `jobMount` through the job.json + all container-arg builders
+  (`carbonara-functions.ts`) and the pipeline + preview/autoflex handlers:
+  `inprocess` uses the **real** job dir (`config.uploadDir/<uuid>`), `podman` keeps
+  `/job` (byte-identical — 65/65 unit tests pass, demo unaffected). Verified: the
+  fixed code emits real paths and the runner completes with **no `/job` mount** as
+  user 62704 (calmodulin fit → status completed). **AutoMD-SAXS never had this** —
+  it already used real paths. So GUI-submitted jobs (the intended UX) now resolve
+  correctly in-pod for both pipelines.
 - **9b — k8s-Job-per-task** remains an alternative (reuse the standalone Carbonara
   image, worker creates a k8s Job per step) but is **not needed** now that 9a is
   done; it would add a ServiceAccount + RBAC + a `k8sjob` exec path and cannot be
@@ -411,8 +424,11 @@ live** once the host `podman run` is removed.
 worker image built per runbook §4.1 (all three steps) contains AutoMD-SAXS **and**
 Carbonara, both proven to run in one image as the deployed non-root user — including
 a **full end-to-end Carbonara `inprocess` job** (real calmodulin fit, status
-completed) run locally in the combined image. Remaining work is cluster-side values
-only (registry, storage classes, GPU) — no packaging or execution gaps.
+completed) run locally in the combined image. Jobs are submitted via the **GUI**
+(UI → backend → queue → worker → results → UI, unchanged from the podman demo); the
+worker's in-pod execution (`inprocess` + real job paths) is what the k8s work
+changed and is now validated for both pipelines. Remaining work is cluster-side
+values only (registry, storage classes, GPU) — no packaging or execution gaps.
 
 ---
 

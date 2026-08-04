@@ -77,6 +77,11 @@ export interface BuildCarbonaraJobJsonOptions {
   // Multi-structure mixture: basenames of the additional structure files in the
   // job mount (species 2..n). Emitted as job.json mixture_pdbs when present.
   mixturePdbFileNames?: string[]
+  // In-container prefix for the job dir. Defaults to CARBONARA_JOB_MOUNT ('/job')
+  // for podman mode (bind mount). In inprocess/k8s mode there is no bind mount, so
+  // the caller passes the REAL host job dir here and every emitted path is absolute
+  // and directly valid in the worker pod.
+  jobMount?: string
 }
 
 /**
@@ -96,6 +101,7 @@ export interface BuildCarbonaraJobJsonOptions {
 export const buildCarbonaraJobJson = (
   opts: BuildCarbonaraJobJsonOptions
 ): CarbonaraJobJson => {
+  const jobMount = opts.jobMount ?? CARBONARA_JOB_MOUNT
   const baseParameters: CarbonaraJobParameters = {
     fit_n_times: opts.parameters.fit_n_times,
     min_q: opts.parameters.min_q,
@@ -127,13 +133,13 @@ export const buildCarbonaraJobJson = (
   } else if (opts.alphaFoldFlex === true && opts.paeFileName) {
     // PAE-guided flexibility: pass flags through to setup_carbonara.py.
     baseParameters.alphaFoldFlex = true
-    baseParameters.pae = `${CARBONARA_JOB_MOUNT}/${opts.paeFileName}`
+    baseParameters.pae = `${jobMount}/${opts.paeFileName}`
     baseParameters.pae_flex_threshold = opts.paeFlexThreshold ?? 16.0
   }
   // auto mode: no extra keys emitted (Phase-1 byte-identical).
 
   if (opts.constraintsFileName) {
-    baseParameters.constraints_file = `${CARBONARA_JOB_MOUNT}/${opts.constraintsFileName}`
+    baseParameters.constraints_file = `${jobMount}/${opts.constraintsFileName}`
   }
 
   // B8: emit chain_merges only when multimer mode is on and merges are present.
@@ -144,17 +150,17 @@ export const buildCarbonaraJobJson = (
   const jobJson: CarbonaraJobJson = {
     job_name: opts.jobName,
     carbonara_root: opts.carbonaraRoot,
-    pdb: `${CARBONARA_JOB_MOUNT}/${opts.pdbFileName}`,
-    saxs: `${CARBONARA_JOB_MOUNT}/${opts.saxsFileName}`,
-    workdir: `${CARBONARA_JOB_MOUNT}/work`,
-    outdir: `${CARBONARA_JOB_MOUNT}/results`,
+    pdb: `${jobMount}/${opts.pdbFileName}`,
+    saxs: `${jobMount}/${opts.saxsFileName}`,
+    workdir: `${jobMount}/work`,
+    outdir: `${jobMount}/results`,
     parameters: baseParameters
   }
 
   // Multi-structure mixture: additional structure paths in the job mount.
   if (opts.mixturePdbFileNames && opts.mixturePdbFileNames.length > 0) {
     jobJson.mixture_pdbs = opts.mixturePdbFileNames.map(
-      (name) => `${CARBONARA_JOB_MOUNT}/${name}`
+      (name) => `${jobMount}/${name}`
     )
   }
 
@@ -541,6 +547,10 @@ export interface BuildInitFoxsContainerArgsOptions {
   /** Optional host path to bind-mount over initFoxsPath for local dev.
    *  When non-empty, inserts -v <initFoxsMount>:<initFoxsPath>:ro,Z. */
   initFoxsMount?: string
+  /** In-container prefix for the job dir. Defaults to '/job' (podman bind mount);
+   *  in inprocess/k8s mode the caller passes the REAL host dir so the command
+   *  paths are valid in-pod without a mount. */
+  jobMount?: string
 }
 
 /**
@@ -556,7 +566,8 @@ export interface BuildInitFoxsContainerArgsOptions {
 export const buildInitFoxsContainerArgs = (
   opts: BuildInitFoxsContainerArgsOptions
 ): string[] => {
-  const args = ['run', '--rm', '-v', `${opts.hostDir}:/job:Z`]
+  const mount = opts.jobMount ?? CARBONARA_JOB_MOUNT
+  const args = ['run', '--rm', '-v', `${opts.hostDir}:${CARBONARA_JOB_MOUNT}:Z`]
 
   if (opts.initFoxsMount) {
     args.push('-v', `${opts.initFoxsMount}:${opts.initFoxsPath}:ro,Z`)
@@ -566,9 +577,9 @@ export const buildInitFoxsContainerArgs = (
     opts.image,
     opts.pythonBin,
     opts.initFoxsPath,
-    '--pdb', `/job/${opts.pdbFileName}`,
-    '--saxs', `/job/${opts.datFileName}`,
-    '--outdir', '/job'
+    '--pdb', `${mount}/${opts.pdbFileName}`,
+    '--saxs', `${mount}/${opts.datFileName}`,
+    '--outdir', mount
   )
 
   if (opts.maxQ != null) {
@@ -608,6 +619,9 @@ export interface BuildAutoFlexContainerArgsOptions {
   /** Optional host path to bind-mount over autoFlexPath for local dev.
    *  When non-empty, inserts -v <autoFlexMount>:<autoFlexPath>:ro,Z. */
   autoFlexMount?: string
+  /** In-container prefix for the job dir. Defaults to '/job' (podman bind mount);
+   *  in inprocess/k8s mode the caller passes the REAL host dir. */
+  jobMount?: string
 }
 
 /**
@@ -622,7 +636,8 @@ export interface BuildAutoFlexContainerArgsOptions {
 export const buildAutoFlexContainerArgs = (
   opts: BuildAutoFlexContainerArgsOptions
 ): string[] => {
-  const args = ['run', '--rm', '-v', `${opts.hostDir}:/job:Z`]
+  const mount = opts.jobMount ?? CARBONARA_JOB_MOUNT
+  const args = ['run', '--rm', '-v', `${opts.hostDir}:${CARBONARA_JOB_MOUNT}:Z`]
 
   if (opts.autoFlexMount) {
     args.push('-v', `${opts.autoFlexMount}:${opts.autoFlexPath}:ro,Z`)
@@ -632,9 +647,9 @@ export const buildAutoFlexContainerArgs = (
     opts.image,
     opts.pythonBin,
     opts.autoFlexPath,
-    '--pdb', `/job/${opts.pdbFileName}`,
-    '--saxs', `/job/${opts.datFileName}`,
-    '--outdir', '/job',
+    '--pdb', `${mount}/${opts.pdbFileName}`,
+    '--saxs', `${mount}/${opts.datFileName}`,
+    '--outdir', mount,
     '--carbonara-root', opts.carbonaraRoot
   )
 
@@ -678,6 +693,9 @@ export interface BuildResultsContainerArgsOptions {
   foxsCmd?: string
   /** Optional host path to bind-mount over resultsPath for local dev. */
   resultsMount?: string
+  /** In-container prefix for the job dir. Defaults to '/job' (podman bind mount);
+   *  in inprocess/k8s mode the caller passes the REAL host dir. */
+  jobMount?: string
 }
 
 /**
@@ -693,7 +711,8 @@ export interface BuildResultsContainerArgsOptions {
 export const buildResultsContainerArgs = (
   opts: BuildResultsContainerArgsOptions
 ): string[] => {
-  const args = ['run', '--rm', '-v', `${opts.hostDir}:/job:Z`]
+  const mount = opts.jobMount ?? CARBONARA_JOB_MOUNT
+  const args = ['run', '--rm', '-v', `${opts.hostDir}:${CARBONARA_JOB_MOUNT}:Z`]
 
   if (opts.resultsMount) {
     args.push('-v', `${opts.resultsMount}:${opts.resultsPath}:ro,Z`)
@@ -703,11 +722,11 @@ export const buildResultsContainerArgs = (
     opts.image,
     opts.pythonBin,
     opts.resultsPath,
-    '--results-dir', '/job/results',
+    '--results-dir', `${mount}/results`,
     '--carbonara-root', opts.carbonaraRoot,
-    '--original', `/job/${opts.pdbFileName}`,
-    '--saxs', `/job/${opts.datFileName}`,
-    '--out', '/job/results/analysis.json'
+    '--original', `${mount}/${opts.pdbFileName}`,
+    '--saxs', `${mount}/${opts.datFileName}`,
+    '--out', `${mount}/results/analysis.json`
   )
 
   if (opts.foxsCmd) {

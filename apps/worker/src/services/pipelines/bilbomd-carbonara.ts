@@ -19,7 +19,8 @@ import {
   buildResultsContainerArgs,
   buildMultiFoxsContainerArgs,
   parseMultiFoxsEnsembles,
-  parseMultiFoxsFit
+  parseMultiFoxsFit,
+  CARBONARA_JOB_MOUNT
 } from '../functions/carbonara-functions.js'
 
 /**
@@ -53,6 +54,13 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
 
   // Host job directory; bind-mounted into the container at /job.
   const workDir = path.join(config.uploadDir, foundJob.uuid)
+
+  // In-container prefix for every job path. podman mode bind-mounts workDir at
+  // /job, so paths are '/job/...'. inprocess (k8s) has NO bind mount — the command
+  // runs directly in the worker pod — so paths must be the REAL workDir. Using
+  // workDir as the "mount" in that mode makes every emitted path valid in-pod.
+  const jobMount =
+    config.carbonara.exec === 'inprocess' ? workDir : CARBONARA_JOB_MOUNT
 
   try {
     // validating-inputs
@@ -114,7 +122,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         | undefined,
       multimer: foundJob.multimer,
       chainMerges: foundJob.chain_merges as number[][] | undefined,
-      mixturePdbFileNames: foundJob.mixture_pdb_files as string[] | undefined
+      mixturePdbFileNames: foundJob.mixture_pdb_files as string[] | undefined,
+      jobMount
     })
     const jobJsonPath = path.join(workDir, 'job.json')
     await fs.writeJson(jobJsonPath, jobJson, { spaces: 2 })
@@ -131,6 +140,7 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
     const args = buildCarbonaraContainerArgs({
       image: config.carbonara.image,
       hostJobDir: workDir,
+      jobJsonContainerPath: `${jobMount}/job.json`,
       runnerPath: config.carbonara.runnerPath,
       pythonBin: config.carbonara.pythonBin,
       runnerMountHost: config.carbonara.runnerMount || undefined,
@@ -215,7 +225,7 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
           ? fitdataDir.split('/').slice(0, -1).join('/')
           : coordsFiles[0].split('/').slice(0, -2).join('/')
 
-        const outRootContainer = '/job/results/all_atom'
+        const outRootContainer = `${jobMount}/results/all_atom`
         const outRootHost = path.join(workDir, 'results', 'all_atom')
         await fs.ensureDir(outRootHost)
 
@@ -383,14 +393,14 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
             }
             if (chosen) {
               const speciesContainer = chosen.map(
-                (name) => `/job/results/all_atom/${name}/${name}_AA.pdb`
+                (name) => `${jobMount}/results/all_atom/${name}/${name}_AA.pdb`
               )
               const mfArgs = buildMultiFoxsContainerArgs({
                 image: config.carbonara.multiFoxsImage,
                 multiFoxsBin: config.carbonara.multiFoxsBin,
                 hostJobDir: workDir,
-                outDirContainer: '/job/results/multifoxs_mixture',
-                saxsContainer: `/job/${foundJob.data_file}`,
+                outDirContainer: `${jobMount}/results/multifoxs_mixture`,
+                saxsContainer: `${jobMount}/${foundJob.data_file}`,
                 speciesPdbsContainer: speciesContainer,
                 numStates: nSpecies
               })
@@ -554,7 +564,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         carbonaraRoot: config.carbonara.carbonaraRoot,
         maxQ: foundJob.max_q,
         foxsCmd: config.carbonara.foxsCmd,
-        resultsMount: config.carbonara.resultsMount || undefined
+        resultsMount: config.carbonara.resultsMount || undefined,
+        jobMount
       })
       const analysisRes = await runCarbonaraContainer({
         containerBin: config.carbonara.containerBin,

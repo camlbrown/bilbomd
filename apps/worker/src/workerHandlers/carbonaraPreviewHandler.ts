@@ -5,7 +5,8 @@ import { logger } from '../helpers/loggers.js'
 import { config } from '../config/config.js'
 import {
   buildInitFoxsContainerArgs,
-  runCarbonaraContainer
+  runCarbonaraContainer,
+  CARBONARA_JOB_MOUNT
 } from '../services/functions/carbonara-functions.js'
 
 export interface CarbonaraPreviewJobData {
@@ -69,7 +70,11 @@ export const processCarbonaraInitFoxs = async (
       maxQ: maxQ ?? null,
       pythonBin: config.carbonara.pythonBin,
       initFoxsPath: config.carbonara.initFoxsPath,
-      initFoxsMount: config.carbonara.initFoxsMount || undefined
+      initFoxsMount: config.carbonara.initFoxsMount || undefined,
+      // inprocess (k8s): no /job bind mount — use the real preview dir so the
+      // command paths are valid in-pod. podman mode keeps '/job'.
+      jobMount:
+        config.carbonara.exec === 'inprocess' ? previewDir : CARBONARA_JOB_MOUNT
     })
 
     logger.info(

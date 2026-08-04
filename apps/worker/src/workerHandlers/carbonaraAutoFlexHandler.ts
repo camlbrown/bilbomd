@@ -5,7 +5,8 @@ import { logger } from '../helpers/loggers.js'
 import { config } from '../config/config.js'
 import {
   buildAutoFlexContainerArgs,
-  runCarbonaraContainer
+  runCarbonaraContainer,
+  CARBONARA_JOB_MOUNT
 } from '../services/functions/carbonara-functions.js'
 
 export interface CarbonaraAutoFlexJobData {
@@ -77,7 +78,11 @@ export const processCarbonaraAutoFlex = async (
       maxQ: maxQ ?? null,
       paeFileName: paeFile ?? null,
       paeFlexThreshold: paeFlexThreshold ?? null,
-      autoFlexMount: config.carbonara.autoFlexMount || undefined
+      autoFlexMount: config.carbonara.autoFlexMount || undefined,
+      // inprocess (k8s): no /job bind mount — use the real work dir so the command
+      // paths are valid in-pod. podman mode keeps '/job'.
+      jobMount:
+        config.carbonara.exec === 'inprocess' ? workDir : CARBONARA_JOB_MOUNT
     })
 
     logger.info(`carbonara-autoflex ${previewId}: running container`, {
