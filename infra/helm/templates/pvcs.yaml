@@ -25,6 +25,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: {{ .claimName | default "bilbomd-uploads" }}
   namespace: {{ $.Values.namespace }}
+  annotations:
+    # Keep this claim (and its job data) when the Helm release is uninstalled, so a
+    # `helm uninstall` never wipes uploads. Delete the PVC manually if truly wanted.
+    "helm.sh/resource-policy": keep
 spec:
   accessModes:
     - {{ .accessMode | default "ReadWriteMany" }}
@@ -40,6 +44,9 @@ kind: PersistentVolumeClaim
 metadata:
   name: {{ .claimName | default "mongodb-volume" }}
   namespace: {{ $.Values.namespace }}
+  annotations:
+    # Keep MongoDB data across a `helm uninstall`.
+    "helm.sh/resource-policy": keep
 spec:
   accessModes:
     - {{ .accessMode | default "ReadWriteOnce" }}
@@ -55,6 +62,9 @@ kind: PersistentVolumeClaim
 metadata:
   name: {{ .claimName | default "redis-volume" }}
   namespace: {{ $.Values.namespace }}
+  annotations:
+    # Keep Redis (BullMQ) data across a `helm uninstall`.
+    "helm.sh/resource-policy": keep
 spec:
   accessModes:
     - {{ .accessMode | default "ReadWriteOnce" }}
