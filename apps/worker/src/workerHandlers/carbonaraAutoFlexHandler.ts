@@ -88,6 +88,10 @@ export const processCarbonaraAutoFlex = async (
       containerBin: config.carbonara.containerBin,
       args,
       cwd: workDir,
+      // Honour CARBONARA_EXEC=inprocess (k8s): run the command directly in the
+      // worker pod instead of nesting a container. Default 'podman' unchanged.
+      execMode: config.carbonara.exec,
+      image: config.carbonara.image,
       // Setup runs the C++ generate_structure many times; give it room but cap.
       timeoutMs: 12 * 60 * 1000,
       onStdoutLine: (line) => {

@@ -81,6 +81,10 @@ export const processCarbonaraInitFoxs = async (
       containerBin: config.carbonara.containerBin,
       args,
       cwd: previewDir,
+      // Honour CARBONARA_EXEC=inprocess (k8s): run the command directly in the
+      // worker pod instead of nesting a container. Default 'podman' unchanged.
+      execMode: config.carbonara.exec,
+      image: config.carbonara.image,
       timeoutMs: 5 * 60 * 1000, // 5 min cap for a preview
       onStdoutLine: (line) => {
         logStream?.write(line + '\n')
