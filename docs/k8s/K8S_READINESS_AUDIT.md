@@ -329,6 +329,55 @@ This is the crux of "will it run in a k8s pod."
   the worker pod with `AUTOMD_SAXS_BIN=/opt/envs/openmm/bin/automd-saxs` and no code
   change. **[INFERRED, high confidence]**
 
+### 6.3 Runtime self-containment — can this branch alone run each worker on k8s? **[CONFIRMED]**
+
+The question: after a proper `helm install` of this branch, do the workers need
+anything from the original local Carbonara/AutoMD-SAXS installs? Traced every
+runtime dependency against the branch + the images built from it.
+
+**Both pipelines are proven to work locally** — each has the worker `podman run`
+its own runtime image (AutoMD-SAXS → `localhost/bilbomd-automd-saxs:dev`; Carbonara
+→ `carbonara-allatom-runtime`). The k8s question is only about **where those tools
+live** once the host `podman run` is removed.
+
+**AutoMD-SAXS — ✅ runtime self-contained.**
+- Worker code (pipeline + prep handler) is in the branch; it only reads/writes the
+  job dir on the shared PVC (`automd-saxs.log`, `manifest.json`).
+- The `automd-saxs` CLI + deps (OpenMM/FoXS/propka/sklearn) are **baked into the
+  worker image** (verified: CLI runs, tools present, `v0.1.1` package present).
+- **Build-time caveat:** the `automd_saxs` package **source is not in this branch**
+  — the Dockerfile `COPY`s it from the separate **AutoMD-SAXS repo** (`v0.1.1`) at
+  image-build time. You need that repo when you *build* the image; the cluster needs
+  nothing from it at runtime.
+
+**Carbonara — ❌ NOT runnable from this branch as-is (packaging gap, not a code gap).**
+- The de-nesting **code** is complete (`inprocess`, 6/6). But `inprocess` runs the
+  Carbonara scripts + `convert_cg2all_carbonara` + `pyfoxs` + the C++ binaries
+  **directly in the worker pod**, at `/opt/carbonara` + `/usr/local/bin`.
+- **No worker image on this branch contains the Carbonara runtime.** Of the 15
+  Dockerfiles, the only Carbonara image is `Dockerfile.carbonara-allatom-runtime`
+  — a **standalone** image `FROM mambaorg/micromamba` (two conda envs: Carbonara
+  py3.12 + cg2all py3.10, CPU `torch`), **not** worker-based. The combined worker
+  image is `bilbomd-worker + automd_saxs` only. So a Carbonara job on k8s would fail:
+  tools not found.
+- **The Carbonara library source is also not in the branch** — only the 4 wrapper
+  scripts (`carbonara_*.py`) are tracked. The `Carbonara/` library + `setupPython.sh`
+  + `CarbonaraDataTools.py` + C++ come from the external
+  `/home/kri42825/carbonara-pseudoWaxsis` at image-build time.
+- **To run Carbonara on k8s you need one of** (neither done):
+  - **9a — bake-in:** replay the Carbonara Dockerfile's install steps onto the
+    worker image (the worker base already ships conda), so `inprocess` finds the
+    tools in-pod. Fully buildable + testable locally; no cluster RBAC. Cost: a large
+    (~17 GB) worker image + build/debug time.
+  - **9b — k8s-Job-per-task:** reuse the existing Carbonara image unchanged; the
+    worker creates a k8s Job per step (PVC-mounted) instead of `podman run`. Cost: a
+    ServiceAccount + RBAC (create/watch Jobs), a new `k8sjob` exec path + a k8s
+    client dependency; **cannot be validated without a cluster.**
+
+**Verdict:** a first k8s deploy of **AutoMD-SAXS alone** works from this branch. For
+**Carbonara too**, complete 9a (recommended — locally provable, no RBAC) or 9b before
+the deploy. See the options analysis accompanying this audit.
+
 ---
 
 ## 7. Local-development assumptions that must be removed/parameterised
