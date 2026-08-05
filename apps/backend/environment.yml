@@ -1,7 +1,12 @@
 name: base
+# conda-forge only (was: defaults, conda-forge). Anaconda's `defaults` channel
+# (repo.anaconda.com) carries commercial-license restrictions and is blocked/
+# unreachable on many build hosts (incl. DLS beamline workstations), which fails the
+# image build. All packages below are available on conda-forge; `nodefaults` stops
+# conda falling back to repo.anaconda.com so the build is portable.
 channels:
-  - defaults
   - conda-forge
+  - nodefaults
 
 dependencies:
   - pillow
