@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bilbomd-backend
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bilbomd-backend
+  template:
+    metadata:
+      labels:
+        app: bilbomd-backend
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: backend
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          # Non-secret env from the ConfigMap; secrets (passwords/JWT) from the Secret.
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+            - secretRef:
+                name: {{ .Values.secretName }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.containerPort }}
+          # /healthcheck returns 503 until Mongo connects, then 200 -> good readiness gate.
+          # No liveness probe yet (avoid restart loops while we shake things out).
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+          volumeMounts:
+            - name: uploads
+              mountPath: /bilbomd/uploads
+            - name: logs
+              mountPath: /bilbomd/logs
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ .Values.uploads.claimName }}
+        - name: logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # MUST be `backend` — the UI's nginx proxies /api to backend:3500.
+  name: {{ .Values.backend.serviceName }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: bilbomd-backend
+  ports:
+    - name: http
+      port: {{ .Values.backend.containerPort }}
+      targetPort: http

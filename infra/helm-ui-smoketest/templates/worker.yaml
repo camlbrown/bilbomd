@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bilbomd-worker
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  # A 23 GB image + long jobs — don't thrash it. One consumer is plenty for testing.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bilbomd-worker
+  template:
+    metadata:
+      labels:
+        app: bilbomd-worker
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: worker
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
+          # Same env as the backend (Mongo/Redis conn, DATA_VOL, HOME, CARBONARA_EXEC=
+          # inprocess, AUTOMD_SAXS_BIN) from the ConfigMap + Secret.
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+            - secretRef:
+                name: {{ .Values.secretName }}
+          ports:
+            - name: config
+              containerPort: {{ .Values.worker.containerPort }}
+          # The worker runs a small config server on :3000 — use it as a health signal.
+          readinessProbe:
+            httpGet:
+              path: /config
+              port: config
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 20
+          volumeMounts:
+            # Same shared PVC as the backend — this is how they exchange job files.
+            - name: uploads
+              mountPath: /bilbomd/uploads
+            - name: logs
+              mountPath: /bilbomd/logs
+          resources:
+            requests:
+              cpu: {{ .Values.worker.resources.requests.cpu | quote }}
+              memory: {{ .Values.worker.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.worker.resources.limits.cpu | quote }}
+              memory: {{ .Values.worker.resources.limits.memory }}
+              {{- if gt (int .Values.worker.gpu) 0 }}
+              # GPU only requested in Phase 3d (AutoMD-SAXS). Carbonara is CPU-only.
+              nvidia.com/gpu: {{ .Values.worker.gpu }}
+              {{- end }}
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ .Values.uploads.claimName }}
+        - name: logs
+          emptyDir: {}

@@ -1,0 +1,21 @@
+{{- if .Values.backendPlaceholder.enabled }}
+# Placeholder Service ONLY so the UI's nginx can resolve the name `backend` at
+# startup (nginx resolves `proxy_pass http://backend:3500` once, at boot, and
+# refuses to start if the name doesn't exist). It has NO selector, so it has NO
+# pods/endpoints -> /api requests get 502, which is expected for a UI-only test.
+# Delete/disable this once the real backend Service exists.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.backendPlaceholder.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: backend-placeholder
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.backendPlaceholder.port }}
+      targetPort: {{ .Values.backendPlaceholder.port }}
+{{- end }}

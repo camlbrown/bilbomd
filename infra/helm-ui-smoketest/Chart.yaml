@@ -1,0 +1,9 @@
+apiVersion: v2
+name: bilbomd-ui
+description: Minimal UI smoke-test chart for BilboMD on B21 Kubernetes (Phase 1).
+# Deliberately tiny: a UI Deployment + ClusterIP Service, plus a placeholder
+# "backend" Service so the UI's nginx (which proxies /api to backend:3500 and
+# resolves that name at startup) can start without the real backend present.
+type: application
+version: 0.1.0
+appVersion: "latest"

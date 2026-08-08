@@ -660,7 +660,7 @@ export const buildAutoFlexContainerArgs = (
     args.push('--max_q', String(opts.maxQ))
   }
   if (opts.paeFileName) {
-    args.push('--pae', `/job/${opts.paeFileName}`)
+    args.push('--pae', `${mount}/${opts.paeFileName}`)
     if (opts.paeFlexThreshold != null) {
       args.push('--pae_flex_threshold', String(opts.paeFlexThreshold))
     }

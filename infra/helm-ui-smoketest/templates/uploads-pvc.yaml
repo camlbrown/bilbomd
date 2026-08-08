@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.uploads.claimName }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: uploads
+  annotations:
+    # Keep this claim (and its job data) if the Helm release is uninstalled, so a
+    # `helm uninstall` never wipes uploads. Delete it manually if you truly want it gone.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.uploads.accessMode }}
+  storageClassName: {{ .Values.uploads.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.uploads.size }}
