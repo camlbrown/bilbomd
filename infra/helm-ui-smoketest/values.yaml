@@ -84,9 +84,14 @@ redis:
 worker:
   image:
     repository: gitlab.diamond.ac.uk:5050/kri42825/bilbomd/bilbomd-worker
-    tag: latest
+    # Immutable tag (NOT :latest). :latest + IfNotPresent silently won't re-pull a
+    # rebuilt image (the node keeps the cached digest); a distinct tag guarantees
+    # the new image is pulled and leaves the old :latest intact for rollback.
+    # chi2fix-20260810 = Carbonara mixture-χ² fixes (Stage 1 multi_foxs q-clamp +
+    # Stage 2 IMP-foxs single-structure unify) + the PAE-path fix, all made live.
+    tag: chi2fix-20260810
     # IfNotPresent, NOT Always: this image is ~23 GB — we don't want to re-pull it on
-    # every restart. First schedule on a node pulls it once (takes several minutes).
+    # every restart. First schedule on a node pulls the new tag once (several minutes).
     pullPolicy: IfNotPresent
   containerPort: 3000   # the worker's internal config server (GET /config)
   # Phase 3b is CPU-only (runs Carbonara). GPU is added in Phase 3d for AutoMD-SAXS.
