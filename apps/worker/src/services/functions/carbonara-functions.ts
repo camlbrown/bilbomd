@@ -863,11 +863,18 @@ export interface BuildMultiFoxsContainerArgsOptions {
   saxsContainer: string
   speciesPdbsContainer: string[]
   numStates: number
+  // Clamp scoring to this q via IMP multi_foxs `-q`/`--max_q`. Emitted only when
+  // set. Pass the job's max_q so the mixture χ² is computed over the SAME q-window
+  // as the per-model single-structure FoXS (buildBackmapLoopCommand's --max-q).
+  // Without it multi_foxs defaults to q≤0.5 and scores the full experimental
+  // range, inflating χ² whenever the data extends past max_q (e.g. talin to
+  // q=0.309) and making the mixture χ² non-comparable to the single-structure χ².
+  maxQ?: number
 }
 
 /**
  * podman run --rm --user root -v <hostJobDir>:/job:Z <image> \
- *   bash -lc 'cd <outdir> && <multi_foxs> -s <N> <saxs> <pdb1> <pdb2> ...'
+ *   bash -lc 'cd <outdir> && <multi_foxs> -s <N> [-q <maxQ>] <saxs> <pdb1> <pdb2> ...'
  * --user root is required: the worker image runs as a non-root user, and rootless
  * podman maps container-root to the host user so outputs land in the mounted dir.
  */
@@ -876,9 +883,11 @@ export const buildMultiFoxsContainerArgs = (
 ): string[] => {
   const q = (s: string) => `"${s}"`
   const pdbs = opts.speciesPdbsContainer.map(q).join(' ')
+  // Options must precede the positional profile/PDB args for IMP multi_foxs.
+  const qFlag = opts.maxQ != null ? ` -q ${opts.maxQ}` : ''
   const inner =
     `mkdir -p ${q(opts.outDirContainer)} && cd ${q(opts.outDirContainer)} && ` +
-    `${q(opts.multiFoxsBin)} -s ${opts.numStates} ${q(opts.saxsContainer)} ${pdbs}`
+    `${q(opts.multiFoxsBin)} -s ${opts.numStates}${qFlag} ${q(opts.saxsContainer)} ${pdbs}`
   return [
     'run',
     '--rm',

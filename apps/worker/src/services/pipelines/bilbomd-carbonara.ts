@@ -403,7 +403,10 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
                 outDirContainer: `${jobMount}/results/multifoxs_mixture`,
                 saxsContainer: `${jobMount}/${foundJob.data_file}`,
                 speciesPdbsContainer: speciesContainer,
-                numStates: nSpecies
+                numStates: nSpecies,
+                // Score the mixture over the same q-window as the per-model FoXS
+                // so the mixture χ² is comparable to the single-structure χ².
+                maxQ: foundJob.max_q
               })
               const mfLog = path.join(workDir, 'logs', 'carbonara.multifoxs.log')
               await fs.ensureFile(mfLog)

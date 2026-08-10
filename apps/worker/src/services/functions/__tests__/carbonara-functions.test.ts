@@ -11,7 +11,8 @@ import {
   buildBackmapContainerArgs,
   parseFoxsResultsSummary,
   selectBestAaModel,
-  buildInitFoxsContainerArgs
+  buildInitFoxsContainerArgs,
+  buildMultiFoxsContainerArgs
 } from '../carbonara-functions.js'
 
 const baseParams = {
@@ -824,5 +825,69 @@ describe('buildInitFoxsContainerArgs', () => {
     // mount present
     const mountArg = args.find((a) => a.startsWith(mount))
     expect(mountArg).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildMultiFoxsContainerArgs — mixture χ² q-clamp (Stage 1)
+// ---------------------------------------------------------------------------
+
+describe('buildMultiFoxsContainerArgs', () => {
+  const baseOpts = {
+    image: 'bilbomd-worker:latest',
+    multiFoxsBin: '/usr/bin/multi_foxs',
+    hostJobDir: '/data/job-uuid',
+    outDirContainer: '/job/results/multifoxs_mixture',
+    saxsContainer: '/job/saxs.dat',
+    speciesPdbsContainer: [
+      '/job/results/all_atom/mol1_sub_0_end/mol1_sub_0_end_AA.pdb',
+      '/job/results/all_atom/mol1_sub_1_end/mol1_sub_1_end_AA.pdb'
+    ],
+    numStates: 2
+  }
+
+  it('builds the container arg vector (run as root, job mount, bash -lc)', () => {
+    const args = buildMultiFoxsContainerArgs(baseOpts)
+    expect(args.slice(0, 6)).toEqual([
+      'run',
+      '--rm',
+      '--user',
+      'root',
+      '-v',
+      `${baseOpts.hostJobDir}:/job:Z`
+    ])
+    expect(args[6]).toBe(baseOpts.image)
+    expect(args[7]).toBe('bash')
+    expect(args[8]).toBe('-lc')
+  })
+
+  it('omits -q when maxQ is not provided', () => {
+    const inner = buildMultiFoxsContainerArgs(baseOpts).at(-1) as string
+    expect(inner).toContain('-s 2')
+    expect(inner).not.toContain(' -q ')
+  })
+
+  it('appends -q <maxQ> right after -s when maxQ is provided', () => {
+    const inner = buildMultiFoxsContainerArgs({
+      ...baseOpts,
+      maxQ: 0.2
+    }).at(-1) as string
+    expect(inner).toContain('-s 2 -q 0.2')
+  })
+
+  it('places -q before the positional saxs/pdb args (IMP requires options first)', () => {
+    const inner = buildMultiFoxsContainerArgs({
+      ...baseOpts,
+      maxQ: 0.2
+    }).at(-1) as string
+    expect(inner.indexOf(' -q 0.2')).toBeLessThan(inner.indexOf(baseOpts.saxsContainer))
+  })
+
+  it('omits -q when maxQ is null', () => {
+    const inner = buildMultiFoxsContainerArgs({
+      ...baseOpts,
+      maxQ: null as unknown as number
+    }).at(-1) as string
+    expect(inner).not.toContain(' -q ')
   })
 })
