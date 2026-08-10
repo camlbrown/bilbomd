@@ -91,9 +91,16 @@ worker:
   containerPort: 3000   # the worker's internal config server (GET /config)
   # Phase 3b is CPU-only (runs Carbonara). GPU is added in Phase 3d for AutoMD-SAXS.
   gpu: 0
+  # Sized for Carbonara's fit-level parallelism: the runner launches each of
+  # `fit_n_times` as a background process, so the CPU LIMIT caps how many fits
+  # run concurrently. B21 schedulable nodes top out at ~15.5 alloc cores
+  # (serv-02) / 11.5 (serv-03); limit 12 bursts comfortably on both and is 3x
+  # the old cap of 4. Small request (2) keeps this long-lived pod schedulable
+  # anywhere without hogging reserved cores; the namespace LimitRange enforces
+  # limit <= 10x request (12/2=6, 16Gi/4Gi=4, 10Gi/1Gi=10 — all OK).
   resources:
-    requests: { cpu: '1', memory: 2Gi }
-    limits:   { cpu: '4', memory: 8Gi }
+    requests: { cpu: '2',  memory: 4Gi,  ephemeral-storage: 1Gi }
+    limits:   { cpu: '12', memory: 16Gi, ephemeral-storage: 10Gi }
 
 # Placeholder backend Service — now OFF, because the real backend provides `backend`.
 backendPlaceholder:
