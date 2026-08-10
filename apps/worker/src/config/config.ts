@@ -154,6 +154,13 @@ export const config = {
       'convert_cg2all_carbonara'
     ),
     foxsCmd: getEnvVarWithDefault('CARBONARA_FOXS_CMD', 'pyfoxs'),
+    // Single-structure scoring engine for the all-atom (backmap) step: IMP
+    // /usr/bin/foxs (the SAME engine as multi_foxs) called by absolute path, so
+    // the per-model single-structure χ² is directly comparable to the mixture χ².
+    // Distinct from foxsCmd (pyfoxs), which is retired from the backmap path.
+    // Absolute path is required — foxs is a system binary, not on the carbonara
+    // micromamba env PATH.
+    foxsBin: getEnvVarWithDefault('CARBONARA_IMG_FOXS_BIN', '/usr/bin/foxs'),
     maxBackmap: parsePositiveIntEnv('CARBONARA_MAX_BACKMAP', 5),
     // 0 = no wall-clock cap (default). Covers the cg2all reconstruction and the
     // FoXS analysis steps; set a positive ms value to re-enable a cap.

@@ -8,6 +8,7 @@ import {
   backmapNameForCoords,
   buildReconstructionPlan,
   buildBackmapLoopCommand,
+  buildImpFoxsScoreSnippet,
   buildBackmapContainerArgs,
   parseFoxsResultsSummary,
   selectBestAaModel,
@@ -586,7 +587,7 @@ describe('buildBackmapLoopCommand', () => {
     carbonaraRoot: '/opt/carbonara',
     cg2allExec: 'convert_cg2all_carbonara',
     doFoxs: false,
-    foxsCmd: 'pyfoxs',
+    foxsBin: '/usr/bin/foxs',
     saxs: `${scenarioRoot}/Saxs.dat`,
     maxQ: 0.2
   }
@@ -628,22 +629,66 @@ describe('buildBackmapLoopCommand', () => {
     expect(cmd).toContain('fixedDistanceConstraints1.dat')
   })
 
-  it('omits FoXS flags when doFoxs is false', () => {
-    const cmd = buildBackmapLoopCommand(tasks, { ...baseOpts, doFoxs: false })
-    expect(cmd).not.toContain('--do-foxs')
-    expect(cmd).not.toContain('--foxs-py')
-    expect(cmd).not.toContain('--saxs')
+  it('never passes pyfoxs flags to backmap_cli.py (retired)', () => {
+    const on = buildBackmapLoopCommand(tasks, { ...baseOpts, doFoxs: true })
+    const off = buildBackmapLoopCommand(tasks, { ...baseOpts, doFoxs: false })
+    for (const cmd of [on, off]) {
+      expect(cmd).not.toContain('--do-foxs')
+      expect(cmd).not.toContain('--foxs-py')
+      expect(cmd).not.toContain('pyfoxs')
+    }
   })
 
-  it('includes FoXS flags when doFoxs is true', () => {
+  it('omits the IMP foxs scoring step when doFoxs is false', () => {
+    const cmd = buildBackmapLoopCommand(tasks, { ...baseOpts, doFoxs: false })
+    expect(cmd).not.toContain('/usr/bin/foxs')
+    expect(cmd).not.toContain('foxs_results.txt')
+  })
+
+  it('appends an IMP foxs scoring step (abs path, -q, outfile) when doFoxs is true', () => {
     const cmd = buildBackmapLoopCommand(tasks, { ...baseOpts, doFoxs: true })
-    expect(cmd).toContain('--do-foxs')
-    expect(cmd).toContain(`--foxs-py 'pyfoxs'`)
-    expect(cmd).toContain(`--saxs '${scenarioRoot}/Saxs.dat'`)
-    expect(cmd).toContain(`--max-q '0.2'`)
-    expect(cmd).toContain(
-      `--foxs-out '${tasks[0].outdir}/foxs_results.txt'`
+    // backmap still runs
+    expect(cmd).toContain(`--outdir '${tasks[0].outdir}'`)
+    // scored with IMP foxs on the AA pdb, clamped to maxQ, into foxs_results.txt
+    expect(cmd).toContain(`'/usr/bin/foxs' '${tasks[0].outdir}/mol1_sub_0_end_AA.pdb'`)
+    expect(cmd).toContain(`'${scenarioRoot}/Saxs.dat' -q '0.2'`)
+    expect(cmd).toContain(`${tasks[0].outdir}/foxs_results.txt`)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildImpFoxsScoreSnippet — single-structure IMP foxs scoring (Stage 2)
+// ---------------------------------------------------------------------------
+
+describe('buildImpFoxsScoreSnippet', () => {
+  const baseOpts = {
+    foxsBin: '/usr/bin/foxs',
+    aaPdb: '/job/results/all_atom/m/m_AA.pdb',
+    saxs: '/job/work/Saxs.dat',
+    maxQ: 0.2,
+    workdir: '/job/results/all_atom/m',
+    outFile: '/job/results/all_atom/m/foxs_results.txt'
+  }
+
+  it('guards on the AA pdb existing and writes ERROR when absent', () => {
+    const s = buildImpFoxsScoreSnippet(baseOpts)
+    expect(s).toContain(`if [ -f '${baseOpts.aaPdb}' ]; then`)
+    expect(s).toContain(`'${baseOpts.aaPdb}' ERROR > '${baseOpts.outFile}'`)
+  })
+
+  it('invokes foxs by absolute path with -q <maxQ> from the workdir', () => {
+    const s = buildImpFoxsScoreSnippet(baseOpts)
+    expect(s).toContain(`cd '${baseOpts.workdir}'`)
+    expect(s).toContain(
+      `'${baseOpts.foxsBin}' '${baseOpts.aaPdb}' '${baseOpts.saxs}' -q '0.2'`
     )
+  })
+
+  it('parses Chi^2 and writes a "<aaPdb> <chi2>" line to outFile', () => {
+    const s = buildImpFoxsScoreSnippet(baseOpts)
+    // extraction splits on the foxs stdout "Chi^2 = " token
+    expect(s).toContain("awk -F'Chi.2 = '")
+    expect(s).toContain(`'%s %s\\n' '${baseOpts.aaPdb}' "$_chi2" > '${baseOpts.outFile}'`)
   })
 })
 

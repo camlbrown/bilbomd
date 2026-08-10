@@ -385,12 +385,54 @@ export const buildReconstructionPlan = (
   })
 }
 
+export interface BuildImpFoxsScoreSnippetOptions {
+  // Absolute path to the IMP foxs binary (e.g. /usr/bin/foxs).
+  foxsBin: string
+  // All-atom PDB to score.
+  aaPdb: string
+  // Experimental SAXS profile.
+  saxs: string
+  // Clamp scoring to this q (IMP foxs -q/--max_q); match multi_foxs and the job max_q.
+  maxQ: number
+  // cd here first so foxs byproducts (.fit/.dat) land in the task outdir.
+  workdir: string
+  // Where to write the backmap-compatible `<aaPdb> <chi2>` result line.
+  outFile: string
+}
+
+/**
+ * Bash snippet that scores ONE all-atom PDB with IMP foxs and writes a
+ * backmap-compatible `<aaPdb> <chi2>` line to outFile (or `<aaPdb> ERROR` when
+ * the PDB is missing or foxs emits no Chi^2). Using IMP `/usr/bin/foxs` (the same
+ * engine as multi_foxs) with `-q <maxQ>` makes the single-structure χ² directly
+ * comparable to the mixture χ². foxs prints `... Chi^2 = <val> c1 = ...` to
+ * stdout, which we parse. Called by ABSOLUTE path — foxs is a system binary, not
+ * on the carbonara micromamba env PATH.
+ */
+export const buildImpFoxsScoreSnippet = (
+  opts: BuildImpFoxsScoreSnippetOptions
+): string => {
+  const { foxsBin, aaPdb, saxs, maxQ, workdir, outFile } = opts
+  const log = `${workdir}/foxs.stdout.log`
+  return [
+    `if [ -f '${aaPdb}' ]; then`,
+    `  ( cd '${workdir}' && '${foxsBin}' '${aaPdb}' '${saxs}' -q '${maxQ}' ) > '${log}' 2>&1`,
+    `  _chi2=$(awk -F'Chi.2 = ' 'NF>1{print $2}' '${log}' | awk '{print $1}' | head -1)`,
+    `  if [ -n "$_chi2" ]; then printf '%s %s\\n' '${aaPdb}' "$_chi2" > '${outFile}'; else printf '%s %s\\n' '${aaPdb}' ERROR > '${outFile}'; fi`,
+    `else`,
+    `  printf '%s %s\\n' '${aaPdb}' ERROR > '${outFile}'`,
+    `fi`
+  ].join('\n')
+}
+
 export interface BuildBackmapLoopCommandOptions {
   pythonBin: string
   carbonaraRoot: string
   cg2allExec: string
   doFoxs: boolean
-  foxsCmd: string
+  // Absolute path to IMP foxs used for single-structure scoring (see
+  // buildImpFoxsScoreSnippet). Replaces the retired pyfoxs (--foxs-py) path.
+  foxsBin: string
   saxs: string
   maxQ: number
   disulfideFile?: string
@@ -399,6 +441,11 @@ export interface BuildBackmapLoopCommandOptions {
 /**
  * Build a single bash -lc body that loops over tasks and runs backmap_cli.py
  * per task. Uses set +e so one failure does not abort the rest.
+ *
+ * Single-structure FoXS scoring is done AFTER reconstruction with IMP
+ * /usr/bin/foxs (buildImpFoxsScoreSnippet) rather than inside backmap_cli.py's
+ * pyfoxs, so the per-model χ² comes from the same engine (and same -q window) as
+ * the mixture multi_foxs χ² and the two are directly comparable.
  */
 export const buildBackmapLoopCommand = (
   tasks: ReconstructionTask[],
@@ -409,7 +456,7 @@ export const buildBackmapLoopCommand = (
     carbonaraRoot,
     cg2allExec,
     doFoxs,
-    foxsCmd,
+    foxsBin,
     saxs,
     maxQ,
     disulfideFile
@@ -421,6 +468,8 @@ export const buildBackmapLoopCommand = (
       : ''
 
   const taskBlocks = tasks.map((t) => {
+    // backmap_cli.py now only reconstructs the all-atom PDB (no --do-foxs); FoXS
+    // scoring is appended below with IMP foxs.
     const baseArgs = [
       `'${pythonBin}'`,
       `'${carbonaraRoot}/backmap_cli.py'`,
@@ -437,21 +486,25 @@ export const buildBackmapLoopCommand = (
       baseArgs.push(`--disulfide-file '${disulfideFile}'`)
     }
 
-    if (doFoxs) {
-      baseArgs.push(
-        '--do-foxs',
-        `--foxs-py '${foxsCmd}'`,
-        `--saxs '${saxs}'`,
-        `--max-q '${maxQ}'`,
-        `--foxs-out '${t.outdir}/foxs_results.txt'`
-      )
-    }
-
-    return (
+    let block =
       `mkdir -p '${t.outdir}'\n` +
       baseArgs.join(' \\\n  ') +
       `\n_rc_${t.name.replace(/[^a-zA-Z0-9_]/g, '_')}=$?`
-    )
+
+    if (doFoxs) {
+      block +=
+        '\n' +
+        buildImpFoxsScoreSnippet({
+          foxsBin,
+          aaPdb: `${t.outdir}/${t.name}_AA.pdb`,
+          saxs,
+          maxQ,
+          workdir: t.outdir,
+          outFile: `${t.outdir}/foxs_results.txt`
+        })
+    }
+
+    return block
   })
 
   return `set +e\n${taskBlocks.join('\n')}`

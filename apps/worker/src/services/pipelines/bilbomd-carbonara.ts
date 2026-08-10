@@ -262,7 +262,9 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
           carbonaraRoot: config.carbonara.carbonaraRoot,
           cg2allExec: config.carbonara.cg2allExec,
           doFoxs,
-          foxsCmd: config.carbonara.foxsCmd,
+          // IMP foxs (same engine as multi_foxs) so single-structure χ² is
+          // comparable to the mixture χ² (Stage 2 engine unification).
+          foxsBin: config.carbonara.foxsBin,
           saxs: saxsInContainer,
           maxQ: foundJob.max_q,
           disulfideFile: disulfideInContainer

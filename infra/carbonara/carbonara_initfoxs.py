@@ -1,16 +1,22 @@
 """
 carbonara_initfoxs.py — BilboMD integration artifact.
 
-Runs a lightweight pyfoxs preview on a single structure + SAXS file and writes
+Runs a lightweight FoXS preview on a single structure + SAXS file and writes
 result.json to --outdir. Intended to be called from the Carbonara container via
 the BilboMD worker (carbonaraPreviewHandler.ts).
+
+Uses IMP foxs (/usr/bin/foxs) — the SAME engine as the mixture multi_foxs and
+the per-model backmap scoring — so the setup-time preview χ² is directly
+comparable to the final single-structure and mixture χ² numbers. Scoring is
+clamped to --max_q (default 0.2, matching the per-model backmap FoXS window)
+unless a value is supplied.
 
 Usage:
     python carbonara_initfoxs.py \\
         --pdb  /job/model.pdb \\
         --saxs /job/saxs.dat  \\
         --outdir /job         \\
-        [--max_q 0.3]
+        [--max_q 0.2] [--foxs-bin /usr/bin/foxs]
 
 Output (outdir/result.json):
     {"status": "done", "chi2": <float>,
@@ -142,13 +148,20 @@ def _find_fit_file(outdir: Path, pdb_stem: str, dat_stem: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description='Run pyfoxs preview and write result.json'
+        description='Run an IMP foxs preview and write result.json'
     )
     parser.add_argument('--pdb', required=True, help='Path to PDB or CIF file')
     parser.add_argument('--saxs', required=True, help='Path to SAXS .dat file')
     parser.add_argument('--outdir', required=True, help='Output directory')
-    parser.add_argument('--max_q', type=float, default=None,
-                        help='Maximum q value (optional)')
+    # Default to 0.2 so the preview χ² is computed over the same q-window as the
+    # per-model backmap FoXS and the (q-clamped) mixture multi_foxs. A supplied
+    # value (from the UI/handler) overrides this.
+    parser.add_argument('--max_q', type=float, default=0.2,
+                        help='Maximum q value (default 0.2)')
+    # IMP foxs binary — a system binary; call by absolute path (not on the
+    # carbonara micromamba env PATH).
+    parser.add_argument('--foxs-bin', dest='foxs_bin', default='/usr/bin/foxs',
+                        help='Path to the IMP foxs binary (default /usr/bin/foxs)')
     args = parser.parse_args()
 
     outdir = Path(args.outdir)
@@ -173,11 +186,11 @@ def main() -> None:
             _convert_cif_to_pdb(pdb_path, converted_pdb)
             pdb_path = converted_pdb
 
-        # Step 2: run pyfoxs. Use basenames with cwd=outdir so the output
-        # <pdbstem>_<datstem>.fit lands in outdir (both inputs live there).
-        cmd = ['pyfoxs', pdb_path.name, saxs_path.name]
-        if args.max_q is not None:
-            cmd += ['--max_q', str(args.max_q)]
+        # Step 2: run IMP foxs. Use basenames with cwd=outdir so the output
+        # <pdbstem>_<datstem>.fit lands in outdir (both inputs live there). IMP
+        # foxs takes `-q <max_q>` (not pyfoxs's --max_q) and prints
+        # `... Chi^2 = <v> c1 = <v> c2 = <v>` to stdout.
+        cmd = [args.foxs_bin, pdb_path.name, saxs_path.name, '-q', str(args.max_q)]
 
         log_path = outdir / 'initfoxs.log'
         proc = subprocess.run(
@@ -192,7 +205,7 @@ def main() -> None:
 
         if proc.returncode != 0:
             write_error(
-                f'pyfoxs exited with code {proc.returncode}; '
+                f'foxs exited with code {proc.returncode}; '
                 f'see initfoxs.log for details'
             )
             sys.exit(1)
