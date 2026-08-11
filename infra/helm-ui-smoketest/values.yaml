@@ -102,10 +102,17 @@ worker:
   # (serv-02) / 11.5 (serv-03); limit 12 bursts comfortably on both and is 3x
   # the old cap of 4. Small request (2) keeps this long-lived pod schedulable
   # anywhere without hogging reserved cores; the namespace LimitRange enforces
-  # limit <= 10x request (12/2=6, 16Gi/4Gi=4, 10Gi/1Gi=10 — all OK).
+  # limit <= 10x request (12/2=6, 32Gi/4Gi=8, 10Gi/1Gi=10 — all OK).
+  #
+  # MEMORY: because ALL fits launch at once, memory scales with fit_n_times (NOT
+  # the CPU limit). At 16Gi a 40-fit talin job OOMKilled the pod (Exit 137) and
+  # BullMQ re-ran it from scratch. Bumped to 32Gi as interim headroom — NOTE 32Gi
+  # is only fully usable on the 48Gi nodes (serv-01/02), not serv-03 (31Gi alloc).
+  # Real fix: batch fits to ~the CPU limit in the runner so memory is bounded
+  # regardless of fit count (same throughput). Until then keep fit counts modest.
   resources:
     requests: { cpu: '2',  memory: 4Gi,  ephemeral-storage: 1Gi }
-    limits:   { cpu: '12', memory: 16Gi, ephemeral-storage: 10Gi }
+    limits:   { cpu: '12', memory: 32Gi, ephemeral-storage: 10Gi }
 
 # Placeholder backend Service — now OFF, because the real backend provides `backend`.
 backendPlaceholder:
