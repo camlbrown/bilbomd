@@ -12,12 +12,15 @@ Container Toolkit — see the last section to switch it on.
 
 ## 0. What you received
 
-- This `docker-deploy-kit/` folder (compose file + scripts + this README).
-- An `images/` folder with `worker.tar.gz`, `backend.tar.gz`, `ui.tar.gz`
-  (the BilboMD images). `mongo` and `redis` are standard public images you pull
-  from Docker Hub — they are NOT in the transfer unless noted.
-
-Put the `images/` folder **inside** this `docker-deploy-kit/` folder.
+A single file: **`bilbomd-docker-deploy.tar`**. Extract it and `cd` in:
+```bash
+tar -xf bilbomd-docker-deploy.tar
+cd bilbomd-docker-deploy
+```
+Inside you'll find this README, the compose file, the scripts, and an `images/`
+folder containing **all five** container images (worker, backend, ui, mongo,
+redis) as `.tar.gz`. **Everything is bundled — you do NOT need internet access
+to pull anything.**
 
 ## 1. Prerequisites (on the host)
 
@@ -33,13 +36,10 @@ Put the `images/` folder **inside** this `docker-deploy-kit/` folder.
 ## 2. Load the images
 
 ```bash
-./load-images.sh            # loads images/{worker,backend,ui}.tar.gz
-# also pull the two public images (skip if you loaded them from tarballs):
-docker pull mongo:8.3.2
-docker pull redis:8.8.0
+./load-images.sh            # loads ALL of images/*.tar.gz and normalises names
 ```
 You should end up with `bilbomd-worker:carbonara`, `bilbomd-backend:carbonara`,
-`bilbomd-ui:carbonara` in `docker images`.
+`bilbomd-ui:carbonara`, `mongo:8.3.2` and `redis:8.8.0` in `docker images`.
 
 ## 3. Configure
 

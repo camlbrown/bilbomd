@@ -35,6 +35,7 @@ services:
 
   backend:
     image: bilbomd-backend:carbonara
+    pull_policy: never          # loaded from the bundled tarball; never pull from a registry
     restart: unless-stopped
     # root so it can write the shared named volumes (test deploy; fine on your host)
     user: "0:0"
@@ -53,6 +54,7 @@ services:
 
   worker:
     image: bilbomd-worker:carbonara
+    pull_policy: never          # loaded from the bundled tarball; never pull from a registry
     restart: unless-stopped
     user: "0:0"
     depends_on: [mongodb, redis]
@@ -81,6 +83,7 @@ services:
 
   ui:
     image: bilbomd-ui:carbonara
+    pull_policy: never          # loaded from the bundled tarball; never pull from a registry
     restart: unless-stopped
     depends_on: [backend]
     ports:
