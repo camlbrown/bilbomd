@@ -1,0 +1,4 @@
+# Never commit a filled-in env (holds secrets) or the transferred images.
+.env
+images/
+*.tar.gz

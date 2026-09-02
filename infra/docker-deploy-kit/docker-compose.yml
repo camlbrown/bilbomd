@@ -1,0 +1,88 @@
+# BilboMD + Carbonara + AutoMD-SAXS — single-host Docker deployment.
+#
+# Carbonara (CPU) profile. AutoMD-SAXS needs a GPU and the NVIDIA Container
+# Toolkit; see README.md "Enabling AutoMD-SAXS (GPU)" to switch it on later.
+#
+# Requires: Docker Engine + Docker Compose v2  (`docker compose version`).
+# Service names are deliberately `redis`, `worker`, `ui`, `backend` — the app
+# resolves some of these by hostname, so DO NOT rename them.
+name: bilbomd
+
+networks:
+  bilbomd-net:
+    driver: bridge
+
+volumes:
+  mongo-data:     # MongoDB database (persists jobs/users)
+  uploads:        # shared job inputs + results (backend writes, worker reads/writes)
+  logs:           # backend + worker logs
+
+services:
+  mongodb:
+    image: mongo:8.3.2
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+    networks: [bilbomd-net]
+
+  redis:
+    image: redis:8.8.0
+    restart: unless-stopped
+    networks: [bilbomd-net]
+
+  backend:
+    image: bilbomd-backend:carbonara
+    restart: unless-stopped
+    # root so it can write the shared named volumes (test deploy; fine on your host)
+    user: "0:0"
+    depends_on: [mongodb, redis]
+    env_file: [.env]
+    volumes:
+      - uploads:/bilbomd/uploads
+      - logs:/bilbomd/logs
+    networks: [bilbomd-net]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3500/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  worker:
+    image: bilbomd-worker:carbonara
+    restart: unless-stopped
+    user: "0:0"
+    depends_on: [mongodb, redis]
+    env_file: [.env]
+    volumes:
+      - uploads:/bilbomd/uploads
+      - logs:/bilbomd/logs
+    tmpfs:
+      - /tmp          # writable HOME/caches (HOME=/tmp in .env) for micromamba/matplotlib
+    networks: [bilbomd-net]
+    # Carbonara is CPU-only. IMPORTANT: Carbonara launches ALL fits at once, so
+    # memory scales with fit_n_times (not CPUs). Keep fit counts modest and size
+    # `memory` generously — an under-sized limit will OOM-kill the container and
+    # the job will restart from scratch. Tune cpus/memory to your host.
+    deploy:
+      resources:
+        limits:
+          cpus: "12"
+          memory: "32g"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/config"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  ui:
+    image: bilbomd-ui:carbonara
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "${BILBOMD_UI_PORT:-8080}:80"   # browse http://<host>:8080
+    networks: [bilbomd-net]
