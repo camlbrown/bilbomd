@@ -57,13 +57,40 @@ command -v kubectl >/dev/null 2>&1 || die "kubectl not found. Run: module load k
 
 bold "BilboMD UI launcher (namespace: $NS, release: $RELEASE)"
 
-kubectl get ns "$NS" >/dev/null 2>&1 \
-  || die "cannot reach namespace '$NS'. Check your context (module load k8s-b21) and RBAC."
+# All cluster calls get a request timeout so a bad context/credentials FAIL FAST
+# with a real error instead of hanging forever.
+KUBECTL="kubectl --request-timeout=${KUBECTL_TIMEOUT:-15s}"
 
-kubectl get svc "$RELEASE" -n "$NS" >/dev/null 2>&1 \
+# 1) Can we reach + authenticate to the API server at all? (fast, real error shown)
+info "Checking cluster connectivity…"
+if ! err=$($KUBECTL version -o json 2>&1 >/dev/null); then
+  red "Cannot reach/authenticate to the Kubernetes API server."
+  echo "  current-context: $(kubectl config current-context 2>/dev/null || echo '(none set)')"
+  echo "  KUBECONFIG:      ${KUBECONFIG:-(default ~/.kube/config)}"
+  echo "  kubectl said:    ${err%%$'\n'*}"
+  echo
+  echo "  This usually means you are not authenticated to the cluster."
+  echo "  'module load k8s-b21' puts kubectl on PATH but does NOT log you in."
+  echo "  Ensure a context is selected (kubectl config get-contexts) and that you"
+  echo "  have completed the Diamond cluster login for k8s-b21."
+  die "cluster unreachable/unauthenticated."
+fi
+
+# 2) Namespace access (use a NAMESPACED check — some users can't 'get namespaces'
+#    cluster-wide even when they have full access inside the namespace).
+if ! err=$($KUBECTL get pods -n "$NS" 2>&1 >/dev/null); then
+  red "Reached the cluster, but cannot access namespace '$NS'."
+  echo "  kubectl said: ${err%%$'\n'*}"
+  echo "  can-i get pods:    $(kubectl auth can-i get pods -n "$NS" 2>/dev/null || echo '?')"
+  echo "  can-i create pods: $(kubectl auth can-i create pods -n "$NS" 2>/dev/null || echo '?')"
+  echo "  If these say 'no', your FedID needs RBAC in '$NS' — ask the b21 admins."
+  die "no access to namespace '$NS'."
+fi
+
+$KUBECTL get svc "$RELEASE" -n "$NS" >/dev/null 2>&1 \
   || die "service '$RELEASE' not found in $NS. Is the chart deployed? (helm upgrade --install)"
 
-kubectl get deploy "$MONGO_DEPLOY" -n "$NS" >/dev/null 2>&1 \
+$KUBECTL get deploy "$MONGO_DEPLOY" -n "$NS" >/dev/null 2>&1 \
   || die "deployment '$MONGO_DEPLOY' not found — cannot mint a login code."
 
 # ------------------------- wait for readiness ------------------------------
