@@ -57,35 +57,31 @@ command -v kubectl >/dev/null 2>&1 || die "kubectl not found. Run: module load k
 
 bold "BilboMD UI launcher (namespace: $NS, release: $RELEASE)"
 
-# All cluster calls get a request timeout so a bad context/credentials FAIL FAST
-# with a real error instead of hanging forever.
-KUBECTL="kubectl --request-timeout=${KUBECTL_TIMEOUT:-15s}"
+# Subsequent (post-login) calls get a request timeout so a stale token/context
+# fails fast instead of hanging.
+KUBECTL="kubectl --request-timeout=${KUBECTL_TIMEOUT:-30s}"
 
-# 1) Can we reach + authenticate to the API server at all? (fast, real error shown)
-info "Checking cluster connectivity…"
-if ! err=$($KUBECTL version -o json 2>&1 >/dev/null); then
-  red "Cannot reach/authenticate to the Kubernetes API server."
+# Cluster connectivity + namespace access, done as ONE *interactive* call.
+#
+# The Diamond kubeconfig prompts for your FedID (Username:/Password:, OIDC) on the
+# first call of a session; the token then caches for later calls. This call MUST
+# stay attached to your terminal — do NOT capture its output in $(...) or 2>&1,
+# or the login prompt is hidden and the script appears to hang. stdout goes to
+# /dev/null; the prompt + any error stay visible on stderr and you can type.
+info "Connecting to the cluster (enter your FedID login if prompted)…"
+if ! kubectl get pods -n "$NS" --request-timeout="${LOGIN_TIMEOUT:-120s}" >/dev/null; then
+  echo
+  red "Could not reach the cluster or access namespace '$NS'."
   echo "  current-context: $(kubectl config current-context 2>/dev/null || echo '(none set)')"
   echo "  KUBECONFIG:      ${KUBECONFIG:-(default ~/.kube/config)}"
-  echo "  kubectl said:    ${err%%$'\n'*}"
+  echo "  can-i get pods:  $(kubectl auth can-i get pods -n "$NS" 2>/dev/null || echo '?')"
   echo
-  echo "  This usually means you are not authenticated to the cluster."
-  echo "  'module load k8s-b21' puts kubectl on PATH but does NOT log you in."
-  echo "  Ensure a context is selected (kubectl config get-contexts) and that you"
-  echo "  have completed the Diamond cluster login for k8s-b21."
-  die "cluster unreachable/unauthenticated."
+  echo "  - A 'Forbidden' above = your FedID lacks RBAC in '$NS' (ask the b21 admins)."
+  echo "  - A connection error  = check your context (kubectl config get-contexts)"
+  echo "    and that you ran 'module load k8s-b21'."
+  die "cluster/namespace preflight failed."
 fi
-
-# 2) Namespace access (use a NAMESPACED check — some users can't 'get namespaces'
-#    cluster-wide even when they have full access inside the namespace).
-if ! err=$($KUBECTL get pods -n "$NS" 2>&1 >/dev/null); then
-  red "Reached the cluster, but cannot access namespace '$NS'."
-  echo "  kubectl said: ${err%%$'\n'*}"
-  echo "  can-i get pods:    $(kubectl auth can-i get pods -n "$NS" 2>/dev/null || echo '?')"
-  echo "  can-i create pods: $(kubectl auth can-i create pods -n "$NS" 2>/dev/null || echo '?')"
-  echo "  If these say 'no', your FedID needs RBAC in '$NS' — ask the b21 admins."
-  die "no access to namespace '$NS'."
-fi
+green "  ✓ connected; namespace '$NS' reachable"
 
 $KUBECTL get svc "$RELEASE" -n "$NS" >/dev/null 2>&1 \
   || die "service '$RELEASE' not found in $NS. Is the chart deployed? (helm upgrade --install)"
