@@ -81,6 +81,8 @@ interface CarbonaraJobFormValues {
   max_mixture_combos: number
   all_atom: boolean
   do_foxs: boolean
+  // Feature G (opt-in): PDBFixer missing-residue repair before setup.
+  fix_missing_residues: boolean
   pae_file: string
   alphafold_flex: boolean
   pae_flex_threshold: number
@@ -669,6 +671,7 @@ const NewCarbonaraJobForm = () => {
     max_mixture_combos: 10,
     all_atom: false,
     do_foxs: true,
+    fix_missing_residues: false,
     pae_file: '',
     alphafold_flex: false,
     pae_flex_threshold: 16,
@@ -710,6 +713,7 @@ const NewCarbonaraJobForm = () => {
     const allAtom = isMixture ? true : values.all_atom
     form.append('all_atom', allAtom.toString())
     form.append('do_foxs', values.do_foxs.toString())
+    form.append('fix_missing_residues', values.fix_missing_residues.toString())
     if (isMixture) {
       const effectiveMixtureN =
         extraStructures.length > 0
@@ -2589,6 +2593,40 @@ const NewCarbonaraJobForm = () => {
                       </Field>
                     </Box>
                   )}
+
+                  {/* Feature G (opt-in): PDBFixer missing-residue repair */}
+                  <Box sx={{ ml: 3, mt: 0.5 }}>
+                    <Field name="fix_missing_residues">
+                      {({
+                        field
+                      }: {
+                        field: {
+                          name: string
+                          value: boolean
+                          onChange: (
+                            e: React.ChangeEvent<HTMLInputElement>
+                          ) => void
+                        }
+                      }) => (
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={field.value}
+                              onChange={field.onChange}
+                              name={field.name}
+                              disabled={isSubmitting}
+                              slotProps={{
+                                input: {
+                                  'aria-label': 'fix-missing-residues-checkbox'
+                                }
+                              }}
+                            />
+                          }
+                          label="Repair missing residues (PDBFixer)"
+                        />
+                      )}
+                    </Field>
+                  </Box>
                 </Paper>
 
                 {/* ── Submit ───────────────────────────────────────────── */}

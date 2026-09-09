@@ -272,6 +272,17 @@ const handleBilboMDCarbonaraJob = async (
       flex_ranges: flexMode === 'manual' ? flexRanges : undefined,
       multimer,
       chain_merges: multimer ? chainMerges : undefined,
+      // Feature G (opt-in): PDBFixer missing-residue repair. Store name/max_gap
+      // only when the user set the toggle (advanced tuners default in the wrapper).
+      fix_missing_residues: toBoolean(req.body.fix_missing_residues),
+      fix_missing_residue_name: toBoolean(req.body.fix_missing_residues)
+        ? req.body.fix_missing_residue_name || undefined
+        : undefined,
+      fix_missing_residue_max_gap:
+        toBoolean(req.body.fix_missing_residues) &&
+        req.body.fix_missing_residue_max_gap !== undefined
+          ? toNumber(req.body.fix_missing_residue_max_gap, 80)
+          : undefined,
       status: 'Submitted',
       time_submitted: new Date(),
       steps,

@@ -35,6 +35,11 @@ export interface CarbonaraJobParameters {
   flex_ranges?: Record<string, number[][]>
   // B8: chain merges — [[i,j],...] 1-based sequential pairs
   chain_merges?: number[][]
+  // Feature G (opt-in): PDBFixer missing-residue repair before setup. Emitted
+  // only when enabled so existing jobs stay byte-identical.
+  fix_missing_residues?: boolean
+  fix_missing_residue_name?: string
+  fix_missing_residue_max_gap?: number
 }
 
 export interface CarbonaraJobJson {
@@ -77,6 +82,11 @@ export interface BuildCarbonaraJobJsonOptions {
   // Multi-structure mixture: basenames of the additional structure files in the
   // job mount (species 2..n). Emitted as job.json mixture_pdbs when present.
   mixturePdbFileNames?: string[]
+  // Feature G (opt-in): PDBFixer missing-residue repair. When fixMissingResidues
+  // is true, emits parameters.fix_missing_residues (+ optional name/max_gap).
+  fixMissingResidues?: boolean
+  fixMissingResidueName?: string
+  fixMissingResidueMaxGap?: number
   // In-container prefix for the job dir. Defaults to CARBONARA_JOB_MOUNT ('/job')
   // for podman mode (bind mount). In inprocess/k8s mode there is no bind mount, so
   // the caller passes the REAL host job dir here and every emitted path is absolute
@@ -145,6 +155,18 @@ export const buildCarbonaraJobJson = (
   // B8: emit chain_merges only when multimer mode is on and merges are present.
   if (opts.multimer === true && opts.chainMerges && opts.chainMerges.length > 0) {
     baseParameters.chain_merges = opts.chainMerges
+  }
+
+  // Feature G (opt-in): PDBFixer missing-residue repair. Only emit the keys when
+  // enabled, so an un-opted job stays byte-identical to before.
+  if (opts.fixMissingResidues === true) {
+    baseParameters.fix_missing_residues = true
+    if (opts.fixMissingResidueName) {
+      baseParameters.fix_missing_residue_name = opts.fixMissingResidueName
+    }
+    if (opts.fixMissingResidueMaxGap !== undefined) {
+      baseParameters.fix_missing_residue_max_gap = opts.fixMissingResidueMaxGap
+    }
   }
 
   const jobJson: CarbonaraJobJson = {

@@ -117,6 +117,50 @@ describe('buildCarbonaraJobJson', () => {
     expect(json.parameters).not.toHaveProperty('pae_flex_threshold')
   })
 
+  // Feature G (opt-in): PDBFixer missing-residue repair
+  it('does NOT emit fix_missing_residues by default (opt-in; byte-identical)', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'no-fix-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams
+    })
+    expect(json.parameters).not.toHaveProperty('fix_missing_residues')
+    expect(json.parameters).not.toHaveProperty('fix_missing_residue_name')
+    expect(json.parameters).not.toHaveProperty('fix_missing_residue_max_gap')
+  })
+
+  it('emits fix_missing_residues (+ optional name/max_gap) when enabled', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'fix-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      fixMissingResidues: true,
+      fixMissingResidueName: 'ALA',
+      fixMissingResidueMaxGap: 40
+    })
+    expect(json.parameters.fix_missing_residues).toBe(true)
+    expect(json.parameters.fix_missing_residue_name).toBe('ALA')
+    expect(json.parameters.fix_missing_residue_max_gap).toBe(40)
+  })
+
+  it('emits fix_missing_residues alone when name/max_gap omitted', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'fix-min-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      fixMissingResidues: true
+    })
+    expect(json.parameters.fix_missing_residues).toBe(true)
+    expect(json.parameters).not.toHaveProperty('fix_missing_residue_name')
+    expect(json.parameters).not.toHaveProperty('fix_missing_residue_max_gap')
+  })
+
   it('Phase-1 output is byte-identical (no PAE keys) when neither flag is set', () => {
     const json = buildCarbonaraJobJson({
       jobName: 'phase1-uuid',

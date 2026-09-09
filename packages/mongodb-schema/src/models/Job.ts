@@ -378,7 +378,11 @@ const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
   // B8: multimer mode and sequential chain-merge pairs (1-based).
   // chain_merges shape stored as Mixed: [[i, j], ...]
   multimer: { type: Boolean, default: false },
-  chain_merges: { type: Schema.Types.Mixed, required: false }
+  chain_merges: { type: Schema.Types.Mixed, required: false },
+  // Feature G (opt-in): PDBFixer missing-residue repair before setup.
+  fix_missing_residues: { type: Boolean, default: false },
+  fix_missing_residue_name: { type: String, required: false },
+  fix_missing_residue_max_gap: { type: Number, required: false }
 })
 
 // AutoMD-SAXS: explicit-solvent OpenMM refinement run by the external

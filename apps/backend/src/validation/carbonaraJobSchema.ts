@@ -105,6 +105,14 @@ export const carbonaraJobSchema = yup.object({
   all_atom: yup.boolean().optional(),
   do_foxs: yup.boolean().optional(),
   alphafold_flex: yup.boolean().optional(),
+  // Feature G (opt-in): PDBFixer missing-residue repair.
+  fix_missing_residues: yup.boolean().optional(),
+  fix_missing_residue_name: yup.string().optional(),
+  fix_missing_residue_max_gap: yup
+    .number()
+    .typeError('fix_missing_residue_max_gap must be a number')
+    .min(1)
+    .optional(),
   pae_flex_threshold: yup
     .number()
     .typeError('pae_flex_threshold must be a number')

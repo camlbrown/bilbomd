@@ -124,6 +124,10 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       multimer: foundJob.multimer,
       chainMerges: foundJob.chain_merges as number[][] | undefined,
       mixturePdbFileNames: foundJob.mixture_pdb_files as string[] | undefined,
+      // Feature G (opt-in): PDBFixer missing-residue repair
+      fixMissingResidues: foundJob.fix_missing_residues,
+      fixMissingResidueName: foundJob.fix_missing_residue_name,
+      fixMissingResidueMaxGap: foundJob.fix_missing_residue_max_gap,
       jobMount
     })
     const jobJsonPath = path.join(workDir, 'job.json')

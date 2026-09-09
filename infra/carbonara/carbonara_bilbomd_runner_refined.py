@@ -386,6 +386,50 @@ def sanitize_input_pdb(input_pdb: Path, carbonara_root: Path) -> Path:
         return input_pdb
 
 
+def maybe_pdbfixer(
+    input_pdb: Path, refine_dir: Path, carbonara_root: Path, params: dict[str, Any]
+) -> Path:
+    """OPT-IN (feature G): repair internal missing-residue gaps with PDBFixer.
+
+    Gated on params['fix_missing_residues'] (default False — off unless the user
+    asks for it, so existing jobs are byte-identical). When on, calls the upstream
+    pdbfixer_prepare_structure_before_carbonara (from setup_carbonara_allAtom) to
+    write a repaired PDB that the ordinary Carbonara reader then consumes; we do
+    NOT alter section numbering afterwards (the upstream fn is careful about that).
+    Runs BEFORE sanitisation so the repaired structure flows through the normal
+    sanitise+setup path. Lenient: any failure falls back to the original PDB so a
+    run is never blocked.
+    """
+    if not params.get("fix_missing_residues", False):
+        return input_pdb
+    try:
+        if str(carbonara_root) not in sys.path:
+            sys.path.insert(0, str(carbonara_root))
+        from setup_carbonara_allAtom import (  # type: ignore[import-not-found]
+            pdbfixer_prepare_structure_before_carbonara,
+        )
+
+        residue_name = str(params.get("fix_missing_residue_name", "GLY"))
+        max_gap = int(params.get("fix_missing_residue_max_gap", 80))
+        out = pdbfixer_prepare_structure_before_carbonara(
+            str(input_pdb),
+            str(refine_dir),
+            enabled=True,
+            residue_name=residue_name,
+            max_gap=max_gap,
+            internal_only=True,
+        )
+        out_path = Path(out)
+        if out_path.exists() and out_path.stat().st_size > 0:
+            print(f"[wrapper] pdbfixer: repaired -> {out_path}", flush=True)
+            return out_path
+        print("[wrapper] pdbfixer: produced no output; using PDB as-is", flush=True)
+        return input_pdb
+    except Exception as exc:  # noqa: BLE001 — never block the run on missing-atom repair
+        print(f"[wrapper] pdbfixer: failed ({exc}); using PDB as-is", flush=True)
+        return input_pdb
+
+
 def clamp_q_to_saxs_range(params: dict[str, Any], input_saxs: Path) -> None:
     """Clamp max_q / max_q_start to just inside the experimental SAXS q-range.
 
@@ -975,12 +1019,17 @@ def main() -> int:
     shutil.copy2(input_pdb_original, input_pdb)
     shutil.copy2(input_saxs_original, input_saxs)
 
+    params = job.get("parameters", {})
+
+    # OPT-IN (feature G): PDBFixer missing-residue repair BEFORE sanitisation, so
+    # the repaired structure flows through the normal sanitise+setup path. No-op
+    # unless params['fix_missing_residues'] is true.
+    input_pdb = maybe_pdbfixer(input_pdb, input_dir, carbonara_root, params)
+
     # Clean the structure (altLoc/duplicate atoms, non-AA HETATM, multi-model)
     # before setup. Numbering is preserved so user flex/constraint residue
     # numbers stay valid. No-op fallback if the sanitiser isn't available.
     input_pdb = sanitize_input_pdb(input_pdb, carbonara_root)
-
-    params = job.get("parameters", {})
     # Guard against a fitter segfault when max_q exceeds the experimental SAXS
     # q-range (clamps max_q / max_q_start to just inside the data).
     clamp_q_to_saxs_range(params, input_saxs)
@@ -996,6 +1045,7 @@ def main() -> int:
         )
         ep = input_dir / f"mixstruct{i + 2}_{ep_orig.name}"
         shutil.copy2(ep_orig, ep)
+        ep = maybe_pdbfixer(ep, input_dir, carbonara_root, params)
         extra_pdbs.append(sanitize_input_pdb(ep, carbonara_root))
     if extra_pdbs:
         params["mixture_n"] = 1 + len(extra_pdbs)

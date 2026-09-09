@@ -34,6 +34,11 @@ interface IBilboMDCarbonaraJob extends IJob {
   // chain indices renumber after each merge.
   multimer?: boolean
   chain_merges?: number[][]
+  // Feature G (opt-in): PDBFixer missing-residue repair before setup.
+  // Default off; name/max_gap are advanced tuners.
+  fix_missing_residues?: boolean
+  fix_missing_residue_name?: string
+  fix_missing_residue_max_gap?: number
 }
 
 export { IBilboMDCarbonaraJob }
