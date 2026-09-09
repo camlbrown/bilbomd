@@ -116,6 +116,13 @@ def main() -> None:
     parser.add_argument('--pae', default=None, help='Optional PAE JSON file')
     parser.add_argument('--pae_flex_threshold', type=float, default=16.0,
                         help='Absolute Å PAE threshold (default 16)')
+    # Feature E (a): disulfide-safe linker selection. Detect Cys SG-SG bonds and,
+    # unless disabled, drop auto-selected linkers whose reshaping would break a
+    # real disulfide (akin to not breaking beta sheets). On by default when S-S
+    # bonds are present; --no-disulfide-check restores the S-S-unaware suggestions.
+    parser.add_argument('--no-disulfide-check', dest='no_disulfide_check',
+                        action='store_true',
+                        help='Do not exclude linkers that would break disulfide bonds')
     args = parser.parse_args()
 
     outdir = Path(args.outdir)
@@ -214,6 +221,35 @@ def main() -> None:
         import CarbonaraDataTools as cdt  # noqa: E402  (heavy import, after setup)
         rows = cdt.possibleLinkerList_all_chains(str(fp_file), str(pdb_path))
 
+        # Feature E (a): detect disulfides and, unless disabled, restrict the
+        # auto-selected linkers to the disulfide-safe subset. All defensive: any
+        # failure falls back to the S-S-unaware selection so the preview never
+        # breaks. No-op (returns input unchanged) when the structure has no S-S.
+        disulfide_bonds: list[dict] = []
+        disulfide_check_applied = False
+        safe_section_set = set(section_set)
+        try:
+            raw_bonds = cdt.find_disulfide_bonds_from_pdb(str(pdb_path)) or []
+            for a, b in raw_bonds:
+                disulfide_bonds.append({
+                    'chain_a': str(a[0]), 'res_a': int(a[1]),
+                    'chain_b': str(b[0]), 'res_b': int(b[1])
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f'[autoflex] disulfide detection failed: {exc}', flush=True)
+
+        if disulfide_bonds and not args.no_disulfide_check:
+            try:
+                coords_file = refine_dir / 'coordinates1.dat'
+                safe = cdt.disulfide_safe_linkers(
+                    list(sections), str(pdb_path), str(coords_file), str(fp_file)
+                )
+                safe_section_set = {int(x) for x in safe}
+                disulfide_check_applied = True
+            except Exception as exc:  # noqa: BLE001
+                print(f'[autoflex] disulfide_safe_linkers failed: {exc}', flush=True)
+                safe_section_set = set(section_set)
+
         all_linkers: list[dict] = []
         by_chain: dict[int, list[list[int]]] = {}
         if rows is not None and len(rows) > 0:
@@ -225,10 +261,13 @@ def main() -> None:
                 chain = int(m.group(1))
                 start = int(m.group(2))
                 stop = int(m.group(3))
-                selected = seg in section_set
+                selected = seg in safe_section_set
+                # Was auto-selected by setup but dropped by the disulfide check.
+                disulfide_excluded = seg in section_set and seg not in safe_section_set
                 all_linkers.append({
                     'segment': seg, 'chain': chain,
-                    'start': start, 'stop': stop, 'selected': selected
+                    'start': start, 'stop': stop, 'selected': selected,
+                    'disulfide_excluded': disulfide_excluded
                 })
                 if selected:
                     by_chain.setdefault(chain, []).append([start, stop])
@@ -240,8 +279,11 @@ def main() -> None:
         result_json.write_text(json.dumps({
             'status': 'done',
             'flex_ranges': flex_ranges,
-            'sections': sections,
-            'all_linkers': all_linkers
+            # Post-disulfide-check selected sections (the recommended set).
+            'sections': sorted(safe_section_set & set(sections)),
+            'all_linkers': all_linkers,
+            'disulfide_bonds': disulfide_bonds,
+            'disulfide_check_applied': disulfide_check_applied
         }))
 
     except Exception as exc:  # noqa: BLE001 — surface any failure as result.json
