@@ -382,7 +382,9 @@ const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
   // Feature G (opt-in): PDBFixer missing-residue repair before setup.
   fix_missing_residues: { type: Boolean, default: false },
   fix_missing_residue_name: { type: String, required: false },
-  fix_missing_residue_max_gap: { type: Number, required: false }
+  fix_missing_residue_max_gap: { type: Number, required: false },
+  // Feature D (opt-in): Guinier low-q trim of the SAXS before setup.
+  guinier_trim: { type: Boolean, default: false }
 })
 
 // AutoMD-SAXS: explicit-solvent OpenMM refinement run by the external

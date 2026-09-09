@@ -283,6 +283,8 @@ const handleBilboMDCarbonaraJob = async (
         req.body.fix_missing_residue_max_gap !== undefined
           ? toNumber(req.body.fix_missing_residue_max_gap, 80)
           : undefined,
+      // Feature D (opt-in): Guinier low-q trim of the SAXS.
+      guinier_trim: toBoolean(req.body.guinier_trim),
       status: 'Submitted',
       time_submitted: new Date(),
       steps,

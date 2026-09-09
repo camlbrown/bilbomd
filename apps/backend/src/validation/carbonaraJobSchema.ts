@@ -113,6 +113,8 @@ export const carbonaraJobSchema = yup.object({
     .typeError('fix_missing_residue_max_gap must be a number')
     .min(1)
     .optional(),
+  // Feature D (opt-in): Guinier low-q trim.
+  guinier_trim: yup.boolean().optional(),
   pae_flex_threshold: yup
     .number()
     .typeError('pae_flex_threshold must be a number')

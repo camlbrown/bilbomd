@@ -99,6 +99,8 @@ export const bilbomdCarbonaraJobSchema = object().shape({
   alphafold_flex: boolean().optional(),
   // Feature G (opt-in): PDBFixer missing-residue repair.
   fix_missing_residues: boolean().optional(),
+  // Feature D (opt-in): Guinier low-q trim.
+  guinier_trim: boolean().optional(),
   pae_flex_threshold: number()
     .typeError('PAE flexibility threshold must be a number')
     .min(0, 'PAE flexibility threshold must be >= 0')

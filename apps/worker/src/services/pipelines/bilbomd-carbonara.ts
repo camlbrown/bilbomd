@@ -128,6 +128,8 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       fixMissingResidues: foundJob.fix_missing_residues,
       fixMissingResidueName: foundJob.fix_missing_residue_name,
       fixMissingResidueMaxGap: foundJob.fix_missing_residue_max_gap,
+      // Feature D (opt-in): Guinier low-q trim
+      guinierTrim: foundJob.guinier_trim,
       jobMount
     })
     const jobJsonPath = path.join(workDir, 'job.json')
@@ -407,7 +409,13 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
                 multiFoxsBin: config.carbonara.multiFoxsBin,
                 hostJobDir: workDir,
                 outDirContainer: `${jobMount}/results/multifoxs_mixture`,
-                saxsContainer: `${jobMount}/${foundJob.data_file}`,
+                // Use the SAME SAXS file the per-model FoXS uses
+                // (scenarioRoot/Saxs.dat = setup's write_saxs output), not the raw
+                // upload. This unifies the SAXS source across single vs mixture χ²
+                // (write_saxs may rescale q nm->Å / strip headers) AND ensures the
+                // optional Guinier low-q trim (feature D, applied before setup)
+                // reaches the mixture scoring too.
+                saxsContainer: saxsInContainer,
                 speciesPdbsContainer: speciesContainer,
                 numStates: nSpecies,
                 // Score the mixture over the same q-window as the per-model FoXS

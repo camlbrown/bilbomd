@@ -161,6 +161,30 @@ describe('buildCarbonaraJobJson', () => {
     expect(json.parameters).not.toHaveProperty('fix_missing_residue_max_gap')
   })
 
+  // Feature D (opt-in): Guinier low-q trim
+  it('does NOT emit guinier_trim by default (opt-in; byte-identical)', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'no-guinier-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams
+    })
+    expect(json.parameters).not.toHaveProperty('guinier_trim')
+  })
+
+  it('emits guinier_trim when enabled', () => {
+    const json = buildCarbonaraJobJson({
+      jobName: 'guinier-uuid',
+      carbonaraRoot: '/opt/carbonara',
+      pdbFileName: 'model.pdb',
+      saxsFileName: 'saxs.dat',
+      parameters: baseParams,
+      guinierTrim: true
+    })
+    expect(json.parameters.guinier_trim).toBe(true)
+  })
+
   it('Phase-1 output is byte-identical (no PAE keys) when neither flag is set', () => {
     const json = buildCarbonaraJobJson({
       jobName: 'phase1-uuid',

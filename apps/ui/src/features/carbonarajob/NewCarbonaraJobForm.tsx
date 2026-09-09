@@ -83,6 +83,8 @@ interface CarbonaraJobFormValues {
   do_foxs: boolean
   // Feature G (opt-in): PDBFixer missing-residue repair before setup.
   fix_missing_residues: boolean
+  // Feature D (opt-in): Guinier low-q trim of the SAXS before setup.
+  guinier_trim: boolean
   pae_file: string
   alphafold_flex: boolean
   pae_flex_threshold: number
@@ -672,6 +674,7 @@ const NewCarbonaraJobForm = () => {
     all_atom: false,
     do_foxs: true,
     fix_missing_residues: false,
+    guinier_trim: false,
     pae_file: '',
     alphafold_flex: false,
     pae_flex_threshold: 16,
@@ -714,6 +717,7 @@ const NewCarbonaraJobForm = () => {
     form.append('all_atom', allAtom.toString())
     form.append('do_foxs', values.do_foxs.toString())
     form.append('fix_missing_residues', values.fix_missing_residues.toString())
+    form.append('guinier_trim', values.guinier_trim.toString())
     if (isMixture) {
       const effectiveMixtureN =
         extraStructures.length > 0
@@ -2623,6 +2627,40 @@ const NewCarbonaraJobForm = () => {
                             />
                           }
                           label="Repair missing residues (PDBFixer)"
+                        />
+                      )}
+                    </Field>
+                  </Box>
+
+                  {/* Feature D (opt-in): Guinier low-q trim */}
+                  <Box sx={{ ml: 3, mt: 0.5 }}>
+                    <Field name="guinier_trim">
+                      {({
+                        field
+                      }: {
+                        field: {
+                          name: string
+                          value: boolean
+                          onChange: (
+                            e: React.ChangeEvent<HTMLInputElement>
+                          ) => void
+                        }
+                      }) => (
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={field.value}
+                              onChange={field.onChange}
+                              name={field.name}
+                              disabled={isSubmitting}
+                              slotProps={{
+                                input: {
+                                  'aria-label': 'guinier-trim-checkbox'
+                                }
+                              }}
+                            />
+                          }
+                          label="Trim low-q (Guinier)"
                         />
                       )}
                     </Field>

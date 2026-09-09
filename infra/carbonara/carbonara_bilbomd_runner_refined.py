@@ -430,6 +430,39 @@ def maybe_pdbfixer(
         return input_pdb
 
 
+def maybe_guinier_trim(
+    input_saxs: Path, carbonara_root: Path, params: dict[str, Any]
+) -> None:
+    """OPT-IN (feature D): trim the low-q prefix of the SAXS via a Guinier fit.
+
+    Gated on params['guinier_trim'] (default False). When on, calls the upstream
+    guinier_trim_saxs_file_inplace (from setup_carbonara_allAtom), which rewrites
+    input_saxs IN PLACE (backing up <file>.pre_guinier_trim) so everything
+    downstream — the coarse fit, the per-model IMP foxs and the mixture multi_foxs
+    (all point at this same trimmed file) — scores the identical q-window. Self-
+    contained (no ATSAS). Lenient: any failure leaves the SAXS unchanged so a run
+    is never blocked. Must run BEFORE clamp_q/setup so the trimmed file is used.
+    """
+    if not params.get("guinier_trim", False):
+        return
+    try:
+        if str(carbonara_root) not in sys.path:
+            sys.path.insert(0, str(carbonara_root))
+        from setup_carbonara_allAtom import (  # type: ignore[import-not-found]
+            guinier_trim_saxs_file_inplace,
+        )
+
+        report = guinier_trim_saxs_file_inplace(str(input_saxs))
+        removed = report.get("removed_points") if isinstance(report, dict) else None
+        print(
+            f"[wrapper] guinier_trim: applied to {input_saxs.name}"
+            + (f" (removed {removed} low-q points)" if removed is not None else ""),
+            flush=True,
+        )
+    except Exception as exc:  # noqa: BLE001 — never block the run on Guinier trimming
+        print(f"[wrapper] guinier_trim: failed ({exc}); using SAXS as-is", flush=True)
+
+
 def clamp_q_to_saxs_range(params: dict[str, Any], input_saxs: Path) -> None:
     """Clamp max_q / max_q_start to just inside the experimental SAXS q-range.
 
@@ -1030,6 +1063,12 @@ def main() -> int:
     # before setup. Numbering is preserved so user flex/constraint residue
     # numbers stay valid. No-op fallback if the sanitiser isn't available.
     input_pdb = sanitize_input_pdb(input_pdb, carbonara_root)
+
+    # OPT-IN (feature D): Guinier low-q trim of the SAXS BEFORE setup, so setup's
+    # write_saxs (-> refine_dir/Saxs.dat) and everything downstream use the trimmed
+    # data. No-op unless params['guinier_trim'] is true.
+    maybe_guinier_trim(input_saxs, carbonara_root, params)
+
     # Guard against a fitter segfault when max_q exceeds the experimental SAXS
     # q-range (clamps max_q / max_q_start to just inside the data).
     clamp_q_to_saxs_range(params, input_saxs)

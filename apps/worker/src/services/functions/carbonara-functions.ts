@@ -40,6 +40,8 @@ export interface CarbonaraJobParameters {
   fix_missing_residues?: boolean
   fix_missing_residue_name?: string
   fix_missing_residue_max_gap?: number
+  // Feature D (opt-in): Guinier low-q trim of the SAXS before setup.
+  guinier_trim?: boolean
 }
 
 export interface CarbonaraJobJson {
@@ -87,6 +89,8 @@ export interface BuildCarbonaraJobJsonOptions {
   fixMissingResidues?: boolean
   fixMissingResidueName?: string
   fixMissingResidueMaxGap?: number
+  // Feature D (opt-in): Guinier low-q trim. Emits parameters.guinier_trim when true.
+  guinierTrim?: boolean
   // In-container prefix for the job dir. Defaults to CARBONARA_JOB_MOUNT ('/job')
   // for podman mode (bind mount). In inprocess/k8s mode there is no bind mount, so
   // the caller passes the REAL host job dir here and every emitted path is absolute
@@ -167,6 +171,11 @@ export const buildCarbonaraJobJson = (
     if (opts.fixMissingResidueMaxGap !== undefined) {
       baseParameters.fix_missing_residue_max_gap = opts.fixMissingResidueMaxGap
     }
+  }
+
+  // Feature D (opt-in): Guinier low-q trim. Emit only when enabled.
+  if (opts.guinierTrim === true) {
+    baseParameters.guinier_trim = true
   }
 
   const jobJson: CarbonaraJobJson = {

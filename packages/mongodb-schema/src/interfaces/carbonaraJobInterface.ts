@@ -39,6 +39,8 @@ interface IBilboMDCarbonaraJob extends IJob {
   fix_missing_residues?: boolean
   fix_missing_residue_name?: string
   fix_missing_residue_max_gap?: number
+  // Feature D (opt-in): Guinier low-q trim of the SAXS before setup. Default off.
+  guinier_trim?: boolean
 }
 
 export { IBilboMDCarbonaraJob }
