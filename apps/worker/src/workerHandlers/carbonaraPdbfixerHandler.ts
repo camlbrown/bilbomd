@@ -79,7 +79,9 @@ export const processCarbonaraPdbfixer = async (
         cwd: workDir,
         execMode: config.carbonara.exec,
         image: config.carbonara.image,
-        timeoutMs: config.carbonara.backmapTimeoutMs,
+        // Cap the run so a wedged PDBFixer can't hold the BullMQ slot forever
+        // (backmapTimeoutMs defaults to 0 = no cap). PDBFixer is normally seconds.
+        timeoutMs: config.carbonara.backmapTimeoutMs || 5 * 60 * 1000,
         onStdoutLine: (line) => logStream?.write(line + '\n'),
         onStderrLine: (line) => logStream?.write(line + '\n')
       })

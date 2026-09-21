@@ -1,3 +1,4 @@
+import { fmtNum, numOrWorst } from './carbonaraFormat'
 import { useState, useCallback } from 'react'
 import {
   Box,
@@ -129,8 +130,8 @@ const CarbonaraPredictionsTable = ({
   )
 
   const sorted = [...predictions].sort((a, b) => {
-    const valA = a[sortKey]
-    const valB = b[sortKey]
+    const valA = numOrWorst(a[sortKey])
+    const valB = numOrWorst(b[sortKey])
     return sortDir === 'asc' ? valA - valB : valB - valA
   })
 
@@ -227,10 +228,10 @@ const CarbonaraPredictionsTable = ({
                       </Typography>
                     </TableCell>
                   )}
-                  <TableCell>{pred.chi2.toFixed(4)}</TableCell>
-                  <TableCell>{pred.rg.toFixed(2)}</TableCell>
-                  <TableCell>{pred.rmsd_to_original.toFixed(2)}</TableCell>
-                  <TableCell>{pred.tm_to_original.toFixed(4)}</TableCell>
+                  <TableCell>{fmtNum(pred.chi2, 4)}</TableCell>
+                  <TableCell>{fmtNum(pred.rg, 2)}</TableCell>
+                  <TableCell>{fmtNum(pred.rmsd_to_original, 2)}</TableCell>
+                  <TableCell>{fmtNum(pred.tm_to_original, 4)}</TableCell>
                 </TableRow>
               )
             })}

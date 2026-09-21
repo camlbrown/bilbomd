@@ -36,7 +36,7 @@ export const createCarbonaraAutoFlex = async (
       }
     })
 
-    const upload = multer({ storage }).fields([
+    const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } }).fields([
       { name: 'pdb_file', maxCount: 1 },
       { name: 'dat_file', maxCount: 1 },
       { name: 'pae_file', maxCount: 1 }

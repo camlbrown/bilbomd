@@ -1,3 +1,4 @@
+import { fmtNum, numOrWorst } from './carbonaraFormat'
 import { useState } from 'react'
 import {
   Box,
@@ -132,8 +133,9 @@ const CarbonaraResults = ({
   } else {
     let bestChi2 = Infinity
     states.forEach((s, i) => {
-      if (s.chi2 < bestChi2) {
-        bestChi2 = s.chi2
+      const c = numOrWorst(s.chi2)
+      if (c < bestChi2) {
+        bestChi2 = c
         defaultStateIdx = i
       }
     })
@@ -310,7 +312,7 @@ const CarbonaraResults = ({
                   <TableBody>
                     {states
                       .map((st, idx) => ({ st, idx }))
-                      .sort((a, b) => a.st.chi2 - b.st.chi2)
+                      .sort((a, b) => numOrWorst(a.st.chi2) - numOrWorst(b.st.chi2))
                       .map(({ st, idx }) => (
                         <TableRow
                           key={`${st.run}-${idx}`}
@@ -320,7 +322,7 @@ const CarbonaraResults = ({
                           sx={{ cursor: 'pointer' }}
                         >
                           <TableCell>{st.species.length}</TableCell>
-                          <TableCell>{st.chi2.toFixed(3)}</TableCell>
+                          <TableCell>{fmtNum(st.chi2, 3)}</TableCell>
                           <TableCell>
                             <Stack
                               direction="row"
@@ -357,7 +359,7 @@ const CarbonaraResults = ({
             {selectedStateIdx === null ? 'Best ensemble' : 'Selected ensemble'} —{' '}
             {activeState.species.length} species,{' '}
             {mixture.method === 'estimated' ? 'estimated' : 'MultiFoXS'} χ² ={' '}
-            {activeState.chi2.toFixed(4)}
+            {fmtNum(activeState.chi2, 4)}
           </Typography>
           <Typography
             variant="caption"
@@ -433,7 +435,7 @@ const CarbonaraResults = ({
             <>
               {summaryStat(
                 `Mixture χ² (${mixture?.method === 'estimated' ? 'estimated' : 'MultiFoXS'})`,
-                mixture?.best ? mixture.best.chi2.toFixed(4) : '—'
+                mixture?.best ? fmtNum(mixture.best.chi2, 4) : '—'
               )}
               {summaryStat(
                 'Ensemble species',

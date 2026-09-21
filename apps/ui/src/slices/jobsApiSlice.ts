@@ -127,10 +127,13 @@ export interface CarbonaraAnalysisPrediction {
   run: number
   sub: number
   aa_pdb: string // relative path under results/, e.g. "all_atom/mol1_sub_0_end/mol1_sub_0_end_AA.pdb"
-  chi2: number
-  rg: number
-  rmsd_to_original: number
-  tm_to_original: number
+  // These numerics can be null at runtime: the worker sanitizes non-finite
+  // (NaN/Inf) FoXS/analysis values to null, and rmsd_to_original/tm_to_original
+  // are absent when the vs-original metric block fails (status stays 'done').
+  chi2: number | null
+  rg: number | null
+  rmsd_to_original: number | null
+  tm_to_original: number | null
 }
 
 export interface CarbonaraConvergencePoint {
@@ -149,13 +152,13 @@ export interface CarbonaraConvergenceRun {
 export interface CarbonaraHistograms {
   rmsd: { pairwise: number[]; vs_original: number[] }
   tm: { pairwise: number[]; vs_original: number[] }
-  rg: { predictions: number[]; original: number }
+  rg: { predictions: number[]; original: number | null }
 }
 
 export interface CarbonaraBestFit {
-  chi2: number
-  c1: number
-  c2: number
+  chi2: number | null
+  c1: number | null
+  c2: number | null
   foxs: { q: number; exp: number; model: number; error: number }[]
 }
 
@@ -178,12 +181,12 @@ export interface CarbonaraMixtureSpecies {
 
 export interface CarbonaraMixtureState {
   run: number
-  chi2: number
+  chi2: number | null
   scale: number
   weights: number[]
   species: CarbonaraMixtureSpecies[]
   fit: {
-    chi2: number
+    chi2: number | null
     foxs: { q: number; exp: number; model: number; error: number }[]
   }
 }

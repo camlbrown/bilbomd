@@ -1,3 +1,4 @@
+import { fmtNum, numOrWorst } from './carbonaraFormat'
 import { useState, useMemo } from 'react'
 import {
   Box,
@@ -91,17 +92,18 @@ const CarbonaraHistogramsPanel = ({
   const [metric, setMetric] = useState<MetricKey>('rmsd')
   const [chi2Filter, setChi2Filter] = useState<number>(chi2Threshold)
 
-  // The slider max is derived from the worst chi2 in predictions
-  const maxChi2 = useMemo(
-    () =>
-      predictions.length > 0
-        ? Math.ceil(Math.max(...predictions.map((p) => p.chi2)) * 10) / 10
-        : chi2Threshold * 2,
-    [predictions, chi2Threshold]
-  )
+  // The slider max is derived from the worst (finite) chi2 in predictions.
+  const maxChi2 = useMemo(() => {
+    const finite = predictions
+      .map((p) => p.chi2)
+      .filter((c): c is number => Number.isFinite(c))
+    return finite.length > 0
+      ? Math.ceil(Math.max(...finite) * 10) / 10
+      : chi2Threshold * 2
+  }, [predictions, chi2Threshold])
 
   const filtered = useMemo(
-    () => predictions.filter((p) => p.chi2 <= chi2Filter),
+    () => predictions.filter((p) => p.chi2 != null && p.chi2 <= chi2Filter),
     [predictions, chi2Filter]
   )
 
@@ -112,8 +114,10 @@ const CarbonaraHistogramsPanel = ({
     metricData.vs_original
   )
 
-  // Rg histogram for filtered predictions
-  const filteredRg = filtered.map((p) => p.rg)
+  // Rg histogram for filtered predictions (drop non-finite Rg)
+  const filteredRg = filtered
+    .map((p) => p.rg)
+    .filter((v): v is number => Number.isFinite(v))
   const rgData = buildHistogram(filteredRg)
   const rgOriginal = histograms.rg.original
 
@@ -208,16 +212,18 @@ const CarbonaraHistogramsPanel = ({
             height={22}
             wrapperStyle={{ bottom: 0 }}
           />
-          <ReferenceLine
-            x={rgOriginal}
-            stroke="#e76f51"
-            strokeDasharray="4 2"
-            label={{
-              value: `Original ${rgOriginal.toFixed(1)}`,
-              position: 'top',
-              fontSize: 11
-            }}
-          />
+          {rgOriginal != null && Number.isFinite(rgOriginal) && (
+            <ReferenceLine
+              x={rgOriginal}
+              stroke="#e76f51"
+              strokeDasharray="4 2"
+              label={{
+                value: `Original ${fmtNum(rgOriginal, 1)}`,
+                position: 'top',
+                fontSize: 11
+              }}
+            />
+          )}
           <Bar
             dataKey="count"
             name="Rg predictions"

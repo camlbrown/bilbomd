@@ -31,7 +31,7 @@ export const createCarbonaraPdbfixer = async (
       destination: (_req, _file, cb) => cb(null, workDir),
       filename: (_req, file, cb) => cb(null, file.originalname.toLowerCase())
     })
-    const upload = multer({ storage }).fields([
+    const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } }).fields([
       { name: 'pdb_file', maxCount: 1 }
     ])
 

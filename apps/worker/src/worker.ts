@@ -255,6 +255,18 @@ const gracefulShutdown = async (signal: string) => {
       await carbonaraPreviewWorker.close()
       logger.info('Carbonara Preview Worker closed')
     }
+    if (carbonaraAutoFlexWorker) {
+      await carbonaraAutoFlexWorker.close()
+      logger.info('Carbonara AutoFlex Worker closed')
+    }
+    if (carbonaraPdbfixerWorker) {
+      await carbonaraPdbfixerWorker.close()
+      logger.info('Carbonara PDBFixer Worker closed')
+    }
+    if (carbonaraGuinierWorker) {
+      await carbonaraGuinierWorker.close()
+      logger.info('Carbonara Guinier Worker closed')
+    }
     if (automdSaxsPrepWorker) {
       await automdSaxsPrepWorker.close()
       logger.info('AutoMD-SAXS Prep Worker closed')
