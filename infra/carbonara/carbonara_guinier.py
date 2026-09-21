@@ -45,6 +45,13 @@ def load_saxs_robust(path: str):
     what Carbonara reads once its own header stripping has run, so the Guinier
     result matches the job's feature-D trim."""
     import numpy as np
+    # IMPORTANT: this row-keep rule MUST match the client parser
+    # (apps/ui/.../carbonaraGuinierMath.ts parseSaxsDat) exactly, because the UI
+    # maps this loader's selected point indices back onto its own parsed array. A
+    # row is kept iff q and I are finite and positive; the sigma column NEVER
+    # affects keep/drop (a bad/absent sigma just means "no sigma" for that row),
+    # and non-finite q/I (nan/inf) are dropped. Divergence here shifts the
+    # auto-selected Guinier window onto the wrong points.
     rows = []
     with open(path) as fh:
         for line in fh:
@@ -52,16 +59,31 @@ def load_saxs_robust(path: str):
             if not s or s.startswith('#'):
                 continue
             parts = s.split()
+            if len(parts) < 2:
+                continue
             try:
-                vals = [float(p) for p in parts[:3]]
+                q = float(parts[0])
+                inten = float(parts[1])
             except ValueError:
-                continue  # header / non-numeric row
-            if len(vals) >= 2:
-                rows.append(vals)
+                continue  # header / non-numeric q or I
+            if not (math.isfinite(q) and math.isfinite(inten) and q > 0 and inten > 0):
+                continue
+            sigma = math.nan
+            if len(parts) >= 3:
+                try:
+                    sv = float(parts[2])
+                    if math.isfinite(sv) and sv > 0:
+                        sigma = sv
+                except ValueError:
+                    pass  # tolerate a non-numeric sigma token — keep the row
+            rows.append((q, inten, sigma))
     if len(rows) < 3:
         raise ValueError('SAXS file has too few numeric q/I rows')
-    ncol = min(len(r) for r in rows)  # 2 (q,I) or 3 (q,I,sigma)
-    return np.asarray([r[:ncol] for r in rows], dtype=float)
+    # Provide sigma only when at least one row has a usable one (missing -> NaN,
+    # which the upstream selector handles per-window); otherwise 2 columns.
+    if any(math.isfinite(r[2]) for r in rows):
+        return np.asarray([[r[0], r[1], r[2]] for r in rows], dtype=float)
+    return np.asarray([[r[0], r[1]] for r in rows], dtype=float)
 
 
 def main() -> None:

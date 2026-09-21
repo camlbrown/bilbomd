@@ -140,7 +140,12 @@ const CarbonaraGuinierPanel = ({
           ) {
             const start = Math.max(0, data.first_point_1_indexed - 1)
             const end = Math.min(pts.length - 1, data.last_point_1_indexed - 1)
-            setFitWin([start, Math.max(end, start + MIN_WINDOW - 1)])
+            // Clamp the widened lower bound back into range for very short curves.
+            const endClamped = Math.min(
+              pts.length - 1,
+              Math.max(end, start + MIN_WINDOW - 1)
+            )
+            setFitWin([start, endClamped])
           } else {
             setError(data.message ?? 'No acceptable Guinier region found.')
           }

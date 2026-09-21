@@ -1372,45 +1372,73 @@ def main() -> int:
                     f"Flexible disulfides: detected + constrained {n_disulfides} "
                     f"disulfide bond(s) (held during fitting)."
                 )
+                if mixture_n > 1 and n_disulfides:
+                    # Disulfides are detected from structure 1 and (via
+                    # apply_constraints) replicated to every mixture species.
+                    # Correct when the species are conformers of the same
+                    # molecule (shared disulfides); for genuinely different
+                    # species the structure-1 pairs/distances are assumed.
+                    print(
+                        "Flexible disulfides: mixture job — disulfide constraints "
+                        "are taken from structure 1 and applied to all species."
+                    )
                 if n_disulfides:
                     parts.append(ss_file.read_text().strip())
             except Exception as exc:
                 print(f"\nDisulfide constraint generation failed: {exc}", file=sys.stderr)
+        effective_lines = [
+            ln for p in parts for ln in p.splitlines() if ln.strip()
+        ]
         cf = carbonara_run_dir / "_effective_constraints.dat"
-        cf.write_text("\n".join(p for p in parts if p) + "\n")
-        print(f"\n[{step_constraints}] Applying distance constraints from: {cf}\n")
-        update_summary(
-            summary_path,
-            summary,
-            status="applying_constraints",
-            disulfide_constraints=n_disulfides,
-        )
-        try:
-            apply_constraints(
-                carbonara_root=carbonara_root,
-                scenario_dir=carbonara_run_dir,
-                run_script=run_script,
-                constraints_file=cf,
-                input_pdb=input_pdb,
-                mixture_n=mixture_n,
+        cf.write_text("\n".join(effective_lines) + ("\n" if effective_lines else ""))
+        # No constraints to apply (e.g. flexible_disulfides on but the structure
+        # has no disulfides): skip cleanly rather than crash apply_constraints on
+        # an empty set. Leave the RunMe constraint term off and fit normally.
+        if not effective_lines:
+            print(
+                f"\n[{step_constraints}] No distance constraints to apply "
+                f"(flexible disulfides requested but none detected); skipping.\n"
             )
-        except Exception as exc:
-            print(f"\nConstraints apply step failed: {exc}", file=sys.stderr)
             update_summary(
                 summary_path,
                 summary,
-                status="constraints_failed",
-                constraints_error=str(exc),
+                status="no_constraints_to_apply",
+                disulfide_constraints=n_disulfides,
             )
-            collect_outputs(
-                carbonara_run_dir=carbonara_run_dir,
-                run_script=run_script if run_script.exists() else None,
-                log_file=log_file,
-                summary_path=summary_path,
-                outdir=outdir,
-                summary=summary,
+        else:
+            print(f"\n[{step_constraints}] Applying distance constraints from: {cf}\n")
+            update_summary(
+                summary_path,
+                summary,
+                status="applying_constraints",
+                disulfide_constraints=n_disulfides,
             )
-            return 1
+            try:
+                apply_constraints(
+                    carbonara_root=carbonara_root,
+                    scenario_dir=carbonara_run_dir,
+                    run_script=run_script,
+                    constraints_file=cf,
+                    input_pdb=input_pdb,
+                    mixture_n=mixture_n,
+                )
+            except Exception as exc:
+                print(f"\nConstraints apply step failed: {exc}", file=sys.stderr)
+                update_summary(
+                    summary_path,
+                    summary,
+                    status="constraints_failed",
+                    constraints_error=str(exc),
+                )
+                collect_outputs(
+                    carbonara_run_dir=carbonara_run_dir,
+                    run_script=run_script if run_script.exists() else None,
+                    log_file=log_file,
+                    summary_path=summary_path,
+                    outdir=outdir,
+                    summary=summary,
+                )
+                return 1
 
     print(f"\n[{step_patch}] Patching generated run script for BilboMD background PID tracking: {run_script}\n")
     update_summary(summary_path, summary, status="patching_run_script", run_script=str(run_script))
