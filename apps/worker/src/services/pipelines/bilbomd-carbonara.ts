@@ -152,7 +152,9 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       pythonBin: config.carbonara.pythonBin,
       runnerMountHost: config.carbonara.runnerMount || undefined,
       dataToolsMountHost: config.carbonara.dataToolsMount || undefined,
-      dataToolsPath: config.carbonara.dataToolsPath
+      dataToolsPath: config.carbonara.dataToolsPath,
+      setupMountHost: config.carbonara.setupMount || undefined,
+      setupPath: config.carbonara.setupPath
     })
     logger.info(
       `Carbonara container: ${config.carbonara.containerBin} ${args.join(' ')}`

@@ -214,6 +214,10 @@ export interface BuildCarbonaraContainerArgsOptions {
   // CarbonaraDataTools.py (mount-to-validate before an image rebuild).
   dataToolsMountHost?: string
   dataToolsPath?: string
+  // Optional host path + in-container path to overlay an updated
+  // setup_carbonara.py (feature F breaklink; mount-to-validate before rebuild).
+  setupMountHost?: string
+  setupPath?: string
 }
 
 /**
@@ -238,6 +242,9 @@ export const buildCarbonaraContainerArgs = (
   }
   if (opts.dataToolsMountHost && opts.dataToolsPath) {
     args.push('-v', `${opts.dataToolsMountHost}:${opts.dataToolsPath}:ro,Z`)
+  }
+  if (opts.setupMountHost && opts.setupPath) {
+    args.push('-v', `${opts.setupMountHost}:${opts.setupPath}:ro,Z`)
   }
   args.push(opts.image, opts.pythonBin, opts.runnerPath, '--job-json', jobJson, '--clean')
   return args

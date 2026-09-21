@@ -177,6 +177,15 @@ export const config = {
     // baked copy for local dev (mount-to-validate before an image rebuild), like
     // runnerMount. Empty string = no mount (use the baked version).
     dataToolsMount: getEnvVarWithDefault('CARBONARA_DATATOOLS_MOUNT', ''),
+    // In-container path to the Carbonara setup script (baked into image).
+    setupPath: getEnvVarWithDefault(
+      'CARBONARA_SETUP_PATH',
+      '/opt/carbonara/setup_carbonara.py'
+    ),
+    // Optional host path to bind-mount an updated setup_carbonara.py over the
+    // baked copy for local dev (feature F breaklink lives here), like
+    // dataToolsMount. Empty string = no mount (use the baked version).
+    setupMount: getEnvVarWithDefault('CARBONARA_SETUP_MOUNT', ''),
     // Mixture all-atom weighting via BilboMD's IMP multi_foxs. It is not in the
     // Carbonara image, so the mixture step runs in the BilboMD worker image
     // (which ships /usr/bin/multi_foxs). Falls back to the ported weight-fit in
