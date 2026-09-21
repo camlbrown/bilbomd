@@ -1512,6 +1512,21 @@ const NewCarbonaraJobForm = () => {
                   >
                     Flexibility
                   </Typography>
+                  {/* Only Structure 1's flexibility is submitted; Carbonara
+                      auto-detects flexibility for the additional mixture
+                      structures. Make that explicit so choices here for a 2+
+                      structure aren't silently dropped. */}
+                  {activeStructure !== 0 && (
+                    <Alert
+                      severity="info"
+                      sx={{ mt: 1, mb: 1 }}
+                    >
+                      Flexibility for additional mixture structures is detected
+                      automatically by Carbonara. Selections here for this
+                      structure are <strong>not submitted</strong> — only
+                      Structure&nbsp;1&apos;s flexibility is applied.
+                    </Alert>
+                  )}
                   <Box sx={{ mt: 1, mb: 1 }}>
                     <FormControl component="fieldset">
                       <FormLabel
@@ -2729,13 +2744,22 @@ const NewCarbonaraJobForm = () => {
                     submitBlockers.push('upload SAXS data (Block 1)')
                   else if (errors.dat_file)
                     submitBlockers.push(String(errors.dat_file))
-                  // Surface any other schema error not already covered above.
+                  // Surface any other schema error not already covered above,
+                  // but SKIP fields hidden in the current mode — otherwise Submit
+                  // stays disabled with a message about a field the user can no
+                  // longer see (e.g. a stale mixture_n error after switching to
+                  // Monomer).
                   Object.entries(errors).forEach(([k, v]) => {
+                    if (['title', 'pdb_file', 'dat_file'].includes(k) || !v)
+                      return
                     if (
-                      !['title', 'pdb_file', 'dat_file'].includes(k) &&
-                      v
+                      oligomericState !== 'mixture' &&
+                      ['mixture_n', 'max_mixture_combos'].includes(k)
                     )
-                      submitBlockers.push(String(v))
+                      return
+                    if (!values.alphafold_flex && k === 'pae_flex_threshold')
+                      return
+                    submitBlockers.push(String(v))
                   })
                   if (
                     flexMode === 'manual' &&

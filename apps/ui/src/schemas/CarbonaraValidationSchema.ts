@@ -64,10 +64,12 @@ export const bilbomdCarbonaraJobSchema = object().shape({
   min_q: number()
     .typeError('q min must be a number')
     .min(0, 'q min must be >= 0')
+    .max(2, 'q min must be <= 2')
     .required('q min is required'),
   max_q: number()
     .typeError('q max must be a number')
     .min(0, 'q max must be >= 0')
+    .max(2, 'q max must be <= 2')
     .required('q max is required')
     .test(
       'max-greater-than-min',
@@ -82,6 +84,7 @@ export const bilbomdCarbonaraJobSchema = object().shape({
     .typeError('Max fitting steps must be a number')
     .integer('Max fitting steps must be an integer')
     .min(1, 'At least 1 step is required')
+    .max(100000, 'No more than 100000 steps')
     .required('Max fitting steps is required'),
   // Mixture/ensemble controls (only meaningful when oligomeric state = mixture).
   mixture_n: number()

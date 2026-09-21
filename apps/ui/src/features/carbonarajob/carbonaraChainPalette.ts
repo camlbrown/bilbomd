@@ -8,8 +8,16 @@ const CHAIN_PALETTE = [
   0x9c755f, 0xbab0ac
 ]
 
+// Map any index (incl. negative / non-finite) into a valid palette slot so an
+// unexpected value can never yield undefined (and a .toString() white-screen).
+const paletteIdx = (i: number): number => {
+  const n = Number.isFinite(i) ? Math.trunc(i) : 0
+  const L = CHAIN_PALETTE.length
+  return ((n % L) + L) % L
+}
+
 export const chainColor = (i: number): Color =>
-  Color(CHAIN_PALETTE[i % CHAIN_PALETTE.length]!)
+  Color(CHAIN_PALETTE[paletteIdx(i)]!)
 
 export const carbonaraChainColorHex = (i: number): string =>
-  '#' + CHAIN_PALETTE[i % CHAIN_PALETTE.length]!.toString(16).padStart(6, '0')
+  '#' + CHAIN_PALETTE[paletteIdx(i)]!.toString(16).padStart(6, '0')

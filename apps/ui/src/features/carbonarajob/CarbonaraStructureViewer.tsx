@@ -183,15 +183,23 @@ const loadOverlay = async (plugin: PluginUIContext, text: string) => {
   const format: BuiltInTrajectoryFormat = isCif ? 'mmcif' : 'pdb'
   // TER-based chain assignment is PDB-only; leave CIF text untouched.
   const payload = isCif ? text : assignChainsByTer(text).text
-  const data = await plugin.builders.data.rawData({
-    data: payload,
-    label: 'original (input)'
-  })
-  const trajectory = await plugin.builders.structure.parseTrajectory(
-    data,
-    format
-  )
-  await plugin.builders.structure.hierarchy.applyPreset(trajectory, 'default')
+  // Parsing the overlay is best-effort: a bad/partial/non-PDB overlay text must
+  // NOT propagate to the caller's catch (that would replace the successfully
+  // loaded prediction with an error). Swallow parse failures here.
+  try {
+    const data = await plugin.builders.data.rawData({
+      data: payload,
+      label: 'original (input)'
+    })
+    const trajectory = await plugin.builders.structure.parseTrajectory(
+      data,
+      format
+    )
+    await plugin.builders.structure.hierarchy.applyPreset(trajectory, 'default')
+  } catch (err) {
+    console.warn('Carbonara overlay parse failed:', err)
+    return
+  }
 
   const structures = plugin.managers.structure.hierarchy.current.structures
   if (structures.length < 2) return

@@ -37,17 +37,22 @@ const buildConvergenceData = (
   xKey: 'step' | 'elapsed_min'
 ): ConvergencePoint[] => {
   // Merge all runs into a single array keyed by the x-axis value.
-  // Each run contributes its own chi2 series.
+  // Each run contributes its own chi2 series. Defend against a partial/older
+  // analysis.json where `convergence` or a run's `points` is missing/non-array
+  // (undefined.forEach would white-screen the shared chart).
+  const safeRuns = Array.isArray(runs) ? runs : []
   const allKeys = new Set<number>()
-  runs.forEach((r) => {
-    r.points.forEach((p) => allKeys.add(xKey === 'step' ? p.step : p.elapsed_min))
+  safeRuns.forEach((r) => {
+    ;(Array.isArray(r.points) ? r.points : []).forEach((p) =>
+      allKeys.add(xKey === 'step' ? p.step : p.elapsed_min)
+    )
   })
   const sorted = Array.from(allKeys).sort((a, b) => a - b)
 
   return sorted.map((xVal) => {
     const row: ConvergencePoint = { key: xVal }
-    runs.forEach((r) => {
-      const pt = r.points.find(
+    safeRuns.forEach((r) => {
+      const pt = (Array.isArray(r.points) ? r.points : []).find(
         (p) => (xKey === 'step' ? p.step : p.elapsed_min) === xVal
       )
       if (pt !== undefined) {
