@@ -453,7 +453,24 @@ def maybe_guinier_trim(
         )
 
         report = guinier_trim_saxs_file_inplace(str(input_saxs))
-        removed = report.get("removed_points") if isinstance(report, dict) else None
+        # The upstream report key is trimmed_lowq_points (not removed_points).
+        removed = (
+            report.get("trimmed_lowq_points") if isinstance(report, dict) else None
+        )
+        # If the trim left too few usable points (a short curve trimmed by up to
+        # 25%), restore the untrimmed backup so it isn't then rejected as
+        # invalid_saxs — the trim is an optimisation, not a hard requirement.
+        min_after = 10
+        if count_usable_saxs_rows(input_saxs, min_points=min_after) < min_after:
+            backup = Path(str(input_saxs) + ".pre_guinier_trim")
+            if backup.is_file():
+                shutil.copy2(backup, input_saxs)
+                print(
+                    "[wrapper] guinier_trim: trim left too few usable points; "
+                    "restored the untrimmed SAXS",
+                    flush=True,
+                )
+                return
         print(
             f"[wrapper] guinier_trim: applied to {input_saxs.name}"
             + (f" (removed {removed} low-q points)" if removed is not None else ""),
@@ -1037,6 +1054,24 @@ def apply_constraints(
         )
     with open(chain_lengths_path, "rb") as fh:
         chain_lengths = pickle.load(fh)
+
+    # Guard the constraint chain-space against feature-F's internal splitting.
+    # setup splits a chain at any >7A CA gap (a missing region), re-lettering
+    # chainLengths.dat per split-segment, but constraints are authored in the
+    # ORIGINAL PDB chain space (chain_first_auth_residues). If the two diverge
+    # (more segments than PDB chains), mapFixedConstraints' cumulative letter
+    # offsets would land each constraint on the WRONG bead — silently holding the
+    # wrong residues. Refuse rather than produce wrong science; PDBFixer (build
+    # missing residues) fills the gap so the split no longer happens.
+    pdb_chain_count = len(chain_first_auth_residues(input_pdb))
+    if pdb_chain_count and len(chain_lengths) != pdb_chain_count:
+        raise WrapperError(
+            "Distance constraints / flexible disulfides cannot be reliably "
+            f"applied: the structure was internally split into {len(chain_lengths)} "
+            f"segments (from {pdb_chain_count} chain(s)) at a large gap in the "
+            "residue numbering (a missing region). Build in the missing residues "
+            "(PDBFixer) or remove the distance constraints, then resubmit."
+        )
 
     local_constraints = scenario_dir / "_constraints_local.dat"
     translate_constraints_to_local(

@@ -459,13 +459,18 @@ export interface BuildImpFoxsScoreSnippetOptions {
 export const buildImpFoxsScoreSnippet = (
   opts: BuildImpFoxsScoreSnippetOptions
 ): string => {
-  const { foxsBin, aaPdb, saxs, maxQ, workdir, outFile } = opts
+  const { foxsBin, aaPdb, saxs, workdir, outFile } = opts
+  // Defence-in-depth: max_q is already bounded [0,2] by the schema + runner, but
+  // never interpolate a NaN/Infinity into the FoXS -q flag.
+  const maxQ = Number.isFinite(opts.maxQ) && opts.maxQ > 0 ? opts.maxQ : 0.2
   const log = `${workdir}/foxs.stdout.log`
   return [
     `if [ -f '${aaPdb}' ]; then`,
     `  ( cd '${workdir}' && '${foxsBin}' '${aaPdb}' '${saxs}' -q '${maxQ}' ) > '${log}' 2>&1`,
     `  _chi2=$(awk -F'Chi.2 = ' 'NF>1{print $2}' '${log}' | awk '{print $1}' | head -1)`,
-    `  if [ -n "$_chi2" ]; then printf '%s %s\\n' '${aaPdb}' "$_chi2" > '${outFile}'; else printf '%s %s\\n' '${aaPdb}' ERROR > '${outFile}'; fi`,
+    // Treat a non-numeric chi2 (empty, or FoXS emitting nan/inf on a degenerate
+    // model) as ERROR so it is skipped from best-model selection.
+    `  case "$_chi2" in ''|*[!0-9.eE+-]*) printf '%s %s\\n' '${aaPdb}' ERROR > '${outFile}';; *) printf '%s %s\\n' '${aaPdb}' "$_chi2" > '${outFile}';; esac`,
     `else`,
     `  printf '%s %s\\n' '${aaPdb}' ERROR > '${outFile}'`,
     `fi`
@@ -1098,7 +1103,10 @@ export const buildMultiFoxsContainerArgs = (
   const q = (s: string) => `"${s}"`
   const pdbs = opts.speciesPdbsContainer.map(q).join(' ')
   // Options must precede the positional profile/PDB args for IMP multi_foxs.
-  const qFlag = opts.maxQ != null ? ` -q ${opts.maxQ}` : ''
+  const qFlag =
+    Number.isFinite(opts.maxQ) && (opts.maxQ as number) > 0
+      ? ` -q ${opts.maxQ}`
+      : ''
   const inner =
     `mkdir -p ${q(opts.outDirContainer)} && cd ${q(opts.outDirContainer)} && ` +
     `${q(opts.multiFoxsBin)} -s ${opts.numStates}${qFlag} ${q(opts.saxsContainer)} ${pdbs}`
