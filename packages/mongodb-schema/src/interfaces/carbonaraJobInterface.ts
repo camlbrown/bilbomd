@@ -41,6 +41,10 @@ interface IBilboMDCarbonaraJob extends IJob {
   fix_missing_residue_max_gap?: number
   // Feature D (opt-in): Guinier low-q trim of the SAXS before setup. Default off.
   guinier_trim?: boolean
+  // Feature E(b) (opt-in): flexible disulfides — allow disulfide-containing
+  // linkers to flex while holding each S-S bond as a distance constraint during
+  // fitting. Default off (rigid).
+  flexible_disulfides?: boolean
 }
 
 export { IBilboMDCarbonaraJob }

@@ -115,6 +115,8 @@ export const carbonaraJobSchema = yup.object({
     .optional(),
   // Feature D (opt-in): Guinier low-q trim.
   guinier_trim: yup.boolean().optional(),
+  // Feature E(b) (opt-in): flexible disulfides.
+  flexible_disulfides: yup.boolean().optional(),
   pae_flex_threshold: yup
     .number()
     .typeError('pae_flex_threshold must be a number')

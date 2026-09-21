@@ -130,6 +130,7 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
       fixMissingResidueMaxGap: foundJob.fix_missing_residue_max_gap,
       // Feature D (opt-in): Guinier low-q trim
       guinierTrim: foundJob.guinier_trim,
+      flexibleDisulfides: foundJob.flexible_disulfides,
       jobMount
     })
     const jobJsonPath = path.join(workDir, 'job.json')

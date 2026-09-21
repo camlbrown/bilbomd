@@ -384,7 +384,9 @@ const bilboMdCarbonaraJobSchema = new Schema<IBilboMDCarbonaraJob>({
   fix_missing_residue_name: { type: String, required: false },
   fix_missing_residue_max_gap: { type: Number, required: false },
   // Feature D (opt-in): Guinier low-q trim of the SAXS before setup.
-  guinier_trim: { type: Boolean, default: false }
+  guinier_trim: { type: Boolean, default: false },
+  // Feature E(b) (opt-in): flexible disulfides (hold S-S bonds as constraints).
+  flexible_disulfides: { type: Boolean, default: false }
 })
 
 // AutoMD-SAXS: explicit-solvent OpenMM refinement run by the external

@@ -960,6 +960,73 @@ def apply_constraints(
             shutil.copyfile(src, scenario_dir / f"fixedDistanceConstraints{i}.dat")
 
 
+def write_disulfide_constraints_file(
+    *, input_pdb: Path, carbonara_root: Path, out_file: Path
+) -> int:
+    """
+    Feature E(b): detect disulfide bonds in input_pdb and write them as fixed
+    distance constraints (`res chain res chain distance`, author numbering) that
+    preserve each bond's current CA-CA distance. Returns the number written.
+
+    Uses Carbonara's own find_disulfide_bonds_from_pdb (Cys SG-SG pairs) and
+    _read_cys_ca_from_pdb (same key space) so the pairs land in Carbonara's
+    numbering, then the caller routes them through the normal apply_constraints
+    path — the C++ fitter holds each disulfide while its linker flexes. Mirrors
+    the upstream notebook workflow (impose disulfides as distance constraints);
+    we deliberately do NOT add the modeller-only backmap SSBOND step (cg2all).
+    """
+    import sys
+    import numpy as np
+
+    sys.path.insert(0, str(carbonara_root))
+    import CarbonaraDataTools as cdt
+
+    bonds = cdt.find_disulfide_bonds_from_pdb(str(input_pdb)) or []
+    if not bonds:
+        out_file.write_text("")
+        return 0
+    cys_ca = cdt._read_cys_ca_from_pdb(str(input_pdb)) or {}
+
+    # find_disulfide returns author chain/residue. For files with a BLANK chain
+    # column (continuously numbered, chains delimited by TER — e.g. 5_C239S) the
+    # chain is ' ' and residues are global; the constraints pipeline expects the
+    # viewer's chain letters (A,B,C,... by TER) + auth residues, exactly like the
+    # user distance-constraints feature. Resolve each residue's viewer chain by
+    # bucketing its global number into the same TER boundaries.
+    first_auth = chain_first_auth_residues(input_pdb)
+    boundaries = sorted(first_auth.items(), key=lambda kv: kv[1])  # [(chain, first), ...]
+
+    def viewer_chain(raw_chain, res: int) -> str:
+        if raw_chain is not None and str(raw_chain).strip():
+            return str(raw_chain).strip()  # explicit chain — use as-is
+        chosen = boundaries[0][0] if boundaries else "A"
+        for chain, first in boundaries:
+            if res >= first:
+                chosen = chain
+            else:
+                break
+        return chosen
+
+    lines: list[str] = []
+    for pair in bonds:
+        (c1, r1), (c2, r2) = pair
+        ca1 = cys_ca.get((c1, r1))
+        ca2 = cys_ca.get((c2, r2))
+        if ca1 is None or ca2 is None:
+            continue
+        dist = float(np.linalg.norm(np.asarray(ca1, float) - np.asarray(ca2, float)))
+        ch1 = viewer_chain(c1, int(r1))
+        ch2 = viewer_chain(c2, int(r2))
+        # The constraint engine int-casts the target distance and applies a fixed
+        # +/-0.5 Angstrom tolerance, so round to nearest integer: the true CA-CA
+        # distance stays within tolerance (i.e. the initial geometry is preserved,
+        # not penalised) while staying merge-safe with 5-column user constraints.
+        lines.append(f"{int(r1)} {ch1} {int(r2)} {ch2} {int(round(dist))}")
+
+    out_file.write_text("\n".join(lines) + ("\n" if lines else ""))
+    return len(lines)
+
+
 def validate_outputs(fitdata_dir: Path) -> tuple[bool, str]:
     """
     Conservative validation. Do not require a final model because a very short
@@ -1182,11 +1249,14 @@ def main() -> int:
     flex_ranges_param = params.get("flex_ranges")
     chain_merges_param = params.get("chain_merges")
     constraints_file_param = params.get("constraints_file")
+    # Feature E(b): flexible disulfides — impose detected S-S bonds as fixed
+    # distance constraints so the C++ fitter holds them while linkers flex.
+    flexible_disulfides_param = bool(params.get("flexible_disulfides", False))
     if flex_ranges_param:
         optional_phases.append("flexibility")
     if chain_merges_param:
         optional_phases.append("merges")
-    if constraints_file_param:
+    if constraints_file_param or flexible_disulfides_param:
         optional_phases.append("constraints")
 
     total_steps = 4 + len(optional_phases)  # setup + optionals + patch + fit + collect
@@ -1277,12 +1347,44 @@ def main() -> int:
             )
             return 1
 
-    # --- Optional: distance constraints (B6) ---
-    if constraints_file_param and step_constraints is not None:
-        cf = resolve_path(constraints_file_param, job_json_dir)
-        require_file(cf, "constraints file")
+    # --- Optional: distance constraints (B6) + flexible disulfides E(b) ---
+    if (constraints_file_param or flexible_disulfides_param) and step_constraints is not None:
+        # Build an effective constraints file = user constraints (if any) plus
+        # auto-detected disulfide constraints (if flexible_disulfides). Both use
+        # the same `res chain res chain distance` (author) format, so a single
+        # apply_constraints call maps them, writes fixedDistanceConstraints{1..N}
+        # and toggles the RunMe constraint term on.
+        parts: list[str] = []
+        n_disulfides = 0
+        if constraints_file_param:
+            user_cf = resolve_path(constraints_file_param, job_json_dir)
+            require_file(user_cf, "constraints file")
+            parts.append(user_cf.read_text().strip())
+        if flexible_disulfides_param:
+            ss_file = carbonara_run_dir / "_disulfide_constraints.dat"
+            try:
+                n_disulfides = write_disulfide_constraints_file(
+                    input_pdb=input_pdb,
+                    carbonara_root=carbonara_root,
+                    out_file=ss_file,
+                )
+                print(
+                    f"Flexible disulfides: detected + constrained {n_disulfides} "
+                    f"disulfide bond(s) (held during fitting)."
+                )
+                if n_disulfides:
+                    parts.append(ss_file.read_text().strip())
+            except Exception as exc:
+                print(f"\nDisulfide constraint generation failed: {exc}", file=sys.stderr)
+        cf = carbonara_run_dir / "_effective_constraints.dat"
+        cf.write_text("\n".join(p for p in parts if p) + "\n")
         print(f"\n[{step_constraints}] Applying distance constraints from: {cf}\n")
-        update_summary(summary_path, summary, status="applying_constraints")
+        update_summary(
+            summary_path,
+            summary,
+            status="applying_constraints",
+            disulfide_constraints=n_disulfides,
+        )
         try:
             apply_constraints(
                 carbonara_root=carbonara_root,

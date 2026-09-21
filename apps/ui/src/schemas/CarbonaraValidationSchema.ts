@@ -101,6 +101,8 @@ export const bilbomdCarbonaraJobSchema = object().shape({
   fix_missing_residues: boolean().optional(),
   // Feature D (opt-in): Guinier low-q trim.
   guinier_trim: boolean().optional(),
+  // Feature E(b) (opt-in): flexible disulfides.
+  flexible_disulfides: boolean().optional(),
   pae_flex_threshold: number()
     .typeError('PAE flexibility threshold must be a number')
     .min(0, 'PAE flexibility threshold must be >= 0')

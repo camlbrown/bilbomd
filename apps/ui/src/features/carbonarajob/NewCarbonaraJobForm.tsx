@@ -20,7 +20,8 @@ import {
   Chip,
   Stack,
   ToggleButton,
-  ToggleButtonGroup
+  ToggleButtonGroup,
+  Tooltip
 } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { Form, Formik, Field, FormikHelpers } from 'formik'
@@ -32,6 +33,7 @@ import {
 } from 'slices/jobsApiSlice'
 import SendIcon from '@mui/icons-material/Send'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { bilbomdCarbonaraJobSchema } from 'schemas/CarbonaraValidationSchema'
@@ -89,6 +91,8 @@ interface CarbonaraJobFormValues {
   fix_missing_residues: boolean
   // Feature D (opt-in): Guinier low-q trim of the SAXS before setup.
   guinier_trim: boolean
+  // Feature E(b) (opt-in): flexible disulfides.
+  flexible_disulfides: boolean
   pae_file: string
   alphafold_flex: boolean
   pae_flex_threshold: number
@@ -685,6 +689,7 @@ const NewCarbonaraJobForm = () => {
     do_foxs: true,
     fix_missing_residues: false,
     guinier_trim: false,
+    flexible_disulfides: false,
     pae_file: '',
     alphafold_flex: false,
     pae_flex_threshold: 16,
@@ -728,6 +733,7 @@ const NewCarbonaraJobForm = () => {
     form.append('do_foxs', values.do_foxs.toString())
     form.append('fix_missing_residues', values.fix_missing_residues.toString())
     form.append('guinier_trim', values.guinier_trim.toString())
+    form.append('flexible_disulfides', values.flexible_disulfides.toString())
     if (isMixture) {
       const effectiveMixtureN =
         extraStructures.length > 0
@@ -1994,6 +2000,64 @@ const NewCarbonaraJobForm = () => {
                   >
                     Distance constraints
                   </Typography>
+
+                  {/* Feature E(b): flexible disulfides. Default off (rigid). When
+                      on, the job auto-detects disulfide bonds and holds each one
+                      as a distance constraint during fitting, so regions near
+                      disulfides can flex without breaking the bonds. */}
+                  <Box
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}
+                  >
+                    <Field name="flexible_disulfides">
+                      {({
+                        field
+                      }: {
+                        field: {
+                          name: string
+                          value: boolean
+                          onChange: (
+                            e: React.ChangeEvent<HTMLInputElement>
+                          ) => void
+                        }
+                      }) => (
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={field.value}
+                              onChange={field.onChange}
+                              name={field.name}
+                              disabled={isSubmitting}
+                              slotProps={{
+                                input: {
+                                  'aria-label': 'flexible-disulfides-checkbox'
+                                }
+                              }}
+                            />
+                          }
+                          label="Allow flexibility near disulfide bonds"
+                        />
+                      )}
+                    </Field>
+                    <Tooltip
+                      arrow
+                      title={
+                        'By default Carbonara keeps disulfide (S–S) bonds rigid — ' +
+                        'it will not flex a linker that contains one. Turn this on ' +
+                        'to let those regions flex while each disulfide is held ' +
+                        'together by a distance constraint during fitting, so the ' +
+                        'bond distance is preserved as the shape changes. The bonds ' +
+                        'are detected automatically from your structure. (Note: the ' +
+                        'all-atom output holds the cysteines close but does not add ' +
+                        'an explicit SSBOND record, as we reconstruct with cg2all.)'
+                      }
+                    >
+                      <InfoOutlinedIcon
+                        fontSize="small"
+                        sx={{ color: 'text.secondary', cursor: 'help' }}
+                      />
+                    </Tooltip>
+                  </Box>
+
                   <Box sx={{ mt: 1, mb: 1 }}>
                     <RadioGroup
                       row

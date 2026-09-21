@@ -285,6 +285,8 @@ const handleBilboMDCarbonaraJob = async (
           : undefined,
       // Feature D (opt-in): Guinier low-q trim of the SAXS.
       guinier_trim: toBoolean(req.body.guinier_trim),
+      // Feature E(b) (opt-in): flexible disulfides (hold S-S as constraints).
+      flexible_disulfides: toBoolean(req.body.flexible_disulfides),
       status: 'Submitted',
       time_submitted: new Date(),
       steps,
