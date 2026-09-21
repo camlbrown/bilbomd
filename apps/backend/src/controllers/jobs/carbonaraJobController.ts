@@ -28,7 +28,13 @@ const createCarbonaraJob = async (req: Request, res: Response) => {
       }
     })
 
-    const upload = multer({ storage: storage })
+    // Cap each uploaded file at 50 MB. Structures (large multi-chain complexes)
+    // and PAE files can be a few MB, so this is generous headroom while stopping
+    // a multi-GB upload from filling the data volume before validation runs.
+    const upload = multer({
+      storage: storage,
+      limits: { fileSize: 50 * 1024 * 1024 }
+    })
     upload.fields([
       { name: 'pdb_file', maxCount: 1 },
       // Additional structures for a multi-structure mixture (species 2..n).
@@ -42,7 +48,13 @@ const createCarbonaraJob = async (req: Request, res: Response) => {
       if (err) {
         logger.error(`Failed to upload one or more files: ${err}`)
         await fs.remove(jobDir)
-        res.status(500).json({ message: 'Failed to upload one or more files' })
+        const tooLarge =
+          err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
+        res.status(tooLarge ? 413 : 500).json({
+          message: tooLarge
+            ? 'An uploaded file exceeds the 50 MB limit'
+            : 'Failed to upload one or more files'
+        })
         return
       }
 

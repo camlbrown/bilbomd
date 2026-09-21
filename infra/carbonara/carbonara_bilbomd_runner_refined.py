@@ -583,6 +583,27 @@ def _count_coord_lines(path: Path) -> int:
     return n
 
 
+def _chain_layout(scenario_dir: Path):
+    """Ordered tuple of per-chain residue counts from chainLengths.dat (in the
+    chain order setup produced), or None if unavailable. Used to verify mixture
+    species share the same chain SPLIT, not just the same total residue count —
+    a same-count/different-split structure yields a fingerprint/coordinate
+    topology the C++ mixture fitter can't reconcile."""
+    import pickle
+
+    p = scenario_dir / "chainLengths.dat"
+    if not p.is_file():
+        return None
+    try:
+        with open(p, "rb") as fh:
+            cl = pickle.load(fh)
+        if isinstance(cl, dict):
+            return tuple(int(v) for v in cl.values())
+        return tuple(int(v) for v in cl)
+    except Exception:
+        return None
+
+
 def merge_mixture_structures(
     *,
     carbonara_root: Path,
@@ -646,6 +667,22 @@ def merge_mixture_structures(
                 f"Mixture structure {idx} ({extra.name}) has {n_i} residues but "
                 f"structure 1 has {ref_n}; mixture structures must share the same "
                 f"topology (same residue/chain count)."
+            )
+        # Same total residue count is necessary but not sufficient: the chain
+        # SPLIT must match too, or the per-species fingerprint/coordinate topology
+        # is inconsistent and the C++ mixture fitter crashes/garbles.
+        ref_layout = _chain_layout(scenario_dir)
+        extra_layout = _chain_layout(src_dir)
+        if (
+            ref_layout is not None
+            and extra_layout is not None
+            and ref_layout != extra_layout
+        ):
+            raise WrapperError(
+                f"Mixture structure {idx} ({extra.name}) has chain layout "
+                f"{extra_layout} but structure 1 has {ref_layout}; mixture "
+                f"structures must share the same chain split (number of chains "
+                f"and per-chain lengths)."
             )
         for stem in stems:
             s = src_dir / f"{stem}1.dat"
