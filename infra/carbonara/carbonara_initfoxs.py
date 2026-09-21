@@ -37,6 +37,25 @@ import tempfile
 from pathlib import Path
 
 
+def _json_sanitize(obj):
+    """Recursively replace non-finite floats (NaN/Inf) with None so json.dumps
+    emits VALID JSON (chi2/c1/c2 can be NaN for a degenerate fit; bare NaN is
+    invalid JSON -> the UI's JSON.parse throws and it polls until timeout)."""
+    import math
+
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_sanitize(v) for v in obj]
+    return obj
+
+
+def _dump_json(payload) -> str:
+    return json.dumps(_json_sanitize(payload), allow_nan=False)
+
+
 # ---------------------------------------------------------------------------
 # CIF -> PDB conversion
 # ---------------------------------------------------------------------------
@@ -240,7 +259,7 @@ def main() -> None:
             'c2': c2,
             'foxs': foxs_rows
         }
-        result_json.write_text(json.dumps(payload))
+        result_json.write_text(_dump_json(payload))
 
     except Exception as exc:
         write_error(str(exc))

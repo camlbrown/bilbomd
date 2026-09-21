@@ -44,6 +44,29 @@ C2_RE = re.compile(r'\bc2\s*=\s*([0-9.eE+\-]+)')
 # Collection (BilboMD worker layout)
 # ---------------------------------------------------------------------------
 
+def _json_sanitize(obj):
+    """Recursively replace non-finite floats (NaN/Inf) with None so json.dumps
+    emits VALID JSON. FoXS routinely reports Chi^2 = nan for degenerate fits;
+    a bare NaN/Infinity token is invalid JSON and makes the backend's JSON.parse
+    throw -> the results UI (no poll cap) hangs forever. Mirrors the TS side's
+    `Number.isFinite(n) ? n : null`."""
+    import math
+
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_sanitize(v) for v in obj]
+    return obj
+
+
+def _dump_json(payload) -> str:
+    """json.dumps with NaN/Inf sanitized to null and allow_nan=False as a
+    backstop (raises rather than silently emitting invalid JSON)."""
+    return json.dumps(_json_sanitize(payload), allow_nan=False)
+
+
 def _model_id(aa_pdb: Path) -> tuple[str, int, int]:
     """('mol1_sub_0_end', run=1, sub=0) from a *_AA.pdb path."""
     name = aa_pdb.stem[:-3] if aa_pdb.stem.endswith('_AA') else aa_pdb.stem
@@ -470,7 +493,7 @@ def main() -> None:
         payload['status'] = 'error'
         payload['message'] = str(exc)
 
-    out_path.write_text(json.dumps(payload))
+    out_path.write_text(_dump_json(payload))
     mix = payload.get('mixture')
     mix_txt = (f"{mix['n_species']}-species mixture, {mix['n_states']} states"
                if mix else 'no mixture')

@@ -604,8 +604,15 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         await MQjob.log('carbonara-analysis: analysis.json written')
         logger.info(`Carbonara analysis.json written for ${foundJob.uuid}`)
       } else {
+        // The results GET endpoint returns {status:'pending'} while analysis.json
+        // is absent and has NO poll cap — so a killed/failed analysis container
+        // would hang the results UI forever. Leave a terminal error status.
+        await fs.outputJson(analysisJson, {
+          status: 'error',
+          message: `Results analysis did not complete (exit ${analysisRes.code}).`
+        })
         await MQjob.log(
-          `carbonara-analysis: analysis.json not produced (exit ${analysisRes.code})`
+          `carbonara-analysis: analysis.json not produced (exit ${analysisRes.code}); wrote error status`
         )
       }
     } catch (analysisErr) {
@@ -614,6 +621,16 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
           analysisErr instanceof Error ? analysisErr.message : String(analysisErr)
         }`
       )
+      // Ensure the results UI never polls forever on a missing analysis.json.
+      const analysisJson = path.join(workDir, 'results', 'analysis.json')
+      if (!(await fs.pathExists(analysisJson))) {
+        await fs
+          .outputJson(analysisJson, {
+            status: 'error',
+            message: 'Results analysis failed.'
+          })
+          .catch(() => undefined)
+      }
       await MQjob.log('carbonara-analysis: failed (non-fatal; results preserved)')
     }
     await MQjob.log('end carbonara-analysis')

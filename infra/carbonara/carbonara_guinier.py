@@ -39,6 +39,18 @@ from pathlib import Path
 MAX_PLOT_POINTS = 2000
 
 
+def _json_sanitize(obj):
+    """Replace non-finite floats (NaN/Inf) with None so json.dumps emits valid
+    JSON (a bare NaN token is invalid JSON and hangs the UI's JSON.parse)."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_sanitize(v) for v in obj]
+    return obj
+
+
 def load_saxs_robust(path: str):
     """Load q/I[/sigma] from a SAXS file, skipping any non-numeric header/comment
     lines (e.g. REMARK banners on raw uploads). The numeric rows are identical to
@@ -190,7 +202,7 @@ def main() -> None:
             'last_point_1_indexed': int(selected['last_point']),
             'points': points,
         }
-        result_json.write_text(json.dumps(result))
+        result_json.write_text(json.dumps(_json_sanitize(result), allow_nan=False))
     except Exception as exc:  # pragma: no cover - defensive
         write_error(f'{type(exc).__name__}: {exc}')
 

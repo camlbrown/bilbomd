@@ -502,6 +502,77 @@ def clamp_q_to_saxs_range(params: dict[str, Any], input_saxs: Path) -> None:
         print(f"[wrapper] q-clamp skipped ({exc})", flush=True)
 
 
+def count_usable_saxs_rows(input_saxs: Path, min_points: int = 10) -> int:
+    """Count SAXS rows with a finite q>0 AND finite I>0. The C++ fitter SEGFAULTS
+    on non-physical intensities (all-negative or NaN I), so this is used to reject
+    such data up front with a clean status instead of a crash."""
+    import math
+
+    good = 0
+    try:
+        with open(input_saxs, errors="replace") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                try:
+                    q = float(parts[0])
+                    iq = float(parts[1])
+                except ValueError:
+                    continue
+                if math.isfinite(q) and math.isfinite(iq) and q > 0 and iq > 0:
+                    good += 1
+                    if good >= min_points:
+                        break
+    except OSError:
+        return 0
+    return good
+
+
+def check_fit_params(params: dict[str, Any]) -> str | None:
+    """Return an error string if the numeric fit parameters are non-finite,
+    out of range, non-integer where required, or have min_q >= max_q; else None.
+    Defense-in-depth behind the backend schema for a hand-authored job.json — a
+    NaN/Inf/inverted q-window or a non-numeric value otherwise reaches the C++
+    engine and segfaults, and a huge max_fit_steps/mixture_n hangs the worker."""
+    import math
+
+    def as_num(key, default, is_int):
+        v = params.get(key, default)
+        try:
+            return int(v) if is_int else float(v)
+        except (ValueError, TypeError):
+            raise ValueError(f"{key} is not a valid number: {v!r}")
+
+    try:
+        min_q = as_num("min_q", 0.01, False)
+        max_q = as_num("max_q", 0.2, False)
+        max_q_start = as_num("max_q_start", 0.2, False)
+        fit_n = as_num("fit_n_times", 20, True)
+        steps = as_num("max_fit_steps", 10000, True)
+        mix = as_num("mixture_n", 1, True)
+    except ValueError as exc:
+        return str(exc)
+
+    for name, val in (("min_q", min_q), ("max_q", max_q), ("max_q_start", max_q_start)):
+        if not math.isfinite(val) or val < 0 or val > 2:
+            return f"{name}={val} is out of range [0, 2]"
+    if not (min_q < max_q):
+        return f"min_q ({min_q}) must be < max_q ({max_q})"
+    if max_q <= 0:
+        return f"max_q ({max_q}) must be > 0"
+    if not (0 < max_q_start <= max_q):
+        return f"max_q_start ({max_q_start}) must be in (0, max_q]"
+    for name, val, lo, hi in (
+        ("fit_n_times", fit_n, 1, 100),
+        ("max_fit_steps", steps, 1, 100000),
+        ("mixture_n", mix, 1, 8),
+    ):
+        if val < lo or val > hi:
+            return f"{name}={val} is out of range [{lo}, {hi}]"
+    return None
+
+
 def _count_coord_lines(path: Path) -> int:
     """Number of non-blank lines (= CA residues) in a coordinates*.dat file."""
     n = 0
@@ -1177,6 +1248,50 @@ def main() -> int:
         "parameters": params,
     }
     write_json(summary_path, summary)
+
+    # Reject non-finite / out-of-range / inverted numeric parameters BEFORE setup
+    # (defense-in-depth behind the backend schema) — a NaN/Inf/inverted q-window
+    # or a non-numeric value otherwise segfaults the C++ engine.
+    param_err = check_fit_params(params)
+    if param_err:
+        print(f"\n[wrapper] invalid parameters: {param_err}\n", file=sys.stderr)
+        update_summary(
+            summary_path, summary, status="invalid_parameters", parameter_error=param_err
+        )
+        collect_outputs(
+            carbonara_run_dir=carbonara_run_dir if carbonara_run_dir.exists() else run_root,
+            run_script=None,
+            log_file=log_file,
+            summary_path=summary_path,
+            outdir=outdir,
+            summary=summary,
+        )
+        return 1
+
+    # Reject non-physical SAXS (all-negative or NaN intensities, empty/degenerate
+    # curves) BEFORE setup — the C++ fitter segfaults on such data. Fails with a
+    # clean status the worker/UI can surface, instead of a crash.
+    MIN_SAXS_POINTS = 10
+    usable_rows = count_usable_saxs_rows(input_saxs, min_points=MIN_SAXS_POINTS)
+    if usable_rows < MIN_SAXS_POINTS:
+        msg = (
+            f"SAXS data unusable: fewer than {MIN_SAXS_POINTS} rows with a "
+            f"positive, finite (q, I). Check the file has valid scattering "
+            f"intensities (positive, non-NaN)."
+        )
+        print(f"\n[wrapper] {msg}\n", file=sys.stderr)
+        update_summary(
+            summary_path, summary, status="invalid_saxs", saxs_error=msg
+        )
+        collect_outputs(
+            carbonara_run_dir=carbonara_run_dir if carbonara_run_dir.exists() else run_root,
+            run_script=None,
+            log_file=log_file,
+            summary_path=summary_path,
+            outdir=outdir,
+            summary=summary,
+        )
+        return 1
 
     setup_cmd = build_setup_command(
         python_exe=sys.executable,

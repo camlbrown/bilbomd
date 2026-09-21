@@ -76,30 +76,61 @@ export const carbonaraJobSchema = yup.object({
     .min(1, 'fit_n_times must be at least 1')
     .max(100, 'fit_n_times too large')
     .optional(),
-  min_q: yup.number().typeError('min_q must be a number').min(0).optional(),
-  max_q: yup.number().typeError('max_q must be a number').min(0).optional(),
+  // q-range bounds (Å⁻¹). Upper caps + the min_q<max_q cross-check below keep a
+  // degenerate/inverted/NaN/Infinity window (which can segfault or hang the C++
+  // engine) from ever reaching the runner. NaN/Infinity fail .min/.max here.
+  min_q: yup
+    .number()
+    .typeError('min_q must be a number')
+    .min(0, 'min_q must be ≥ 0')
+    .max(2, 'min_q too large')
+    .optional(),
+  max_q: yup
+    .number()
+    .typeError('max_q must be a number')
+    .moreThan(0, 'max_q must be > 0')
+    .max(2, 'max_q too large')
+    .test('max_q-gt-min_q', 'max_q must be greater than min_q', function (value) {
+      const { min_q } = this.parent
+      if (value == null || min_q == null) return true
+      return value > min_q
+    })
+    .optional(),
   max_q_start: yup
     .number()
     .typeError('max_q_start must be a number')
-    .min(0)
+    .moreThan(0, 'max_q_start must be > 0')
+    .max(2, 'max_q_start too large')
+    .test(
+      'max_q_start-le-max_q',
+      'max_q_start must be ≤ max_q',
+      function (value) {
+        const { max_q } = this.parent
+        if (value == null || max_q == null) return true
+        return value <= max_q
+      }
+    )
     .optional(),
   max_fit_steps: yup
     .number()
     .typeError('max_fit_steps must be a number')
     .integer('max_fit_steps must be an integer')
     .min(1, 'max_fit_steps must be at least 1')
+    .max(100000, 'max_fit_steps too large')
     .optional(),
   mixture_n: yup
     .number()
     .typeError('mixture_n must be a number')
     .integer('mixture_n must be an integer')
     .min(1, 'mixture_n must be at least 1')
+    .max(8, 'mixture_n too large')
     .optional(),
   max_mixture_combos: yup
     .number()
     .typeError('max_mixture_combos must be a number')
     .integer('max_mixture_combos must be an integer')
     .min(1, 'max_mixture_combos must be at least 1')
+    .max(1000, 'max_mixture_combos too large')
     .optional(),
   rotation: yup.boolean().optional(),
   all_atom: yup.boolean().optional(),
