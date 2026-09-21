@@ -48,7 +48,11 @@ import CarbonaraStructureViewer, {
 import { carbonaraChainColorHex } from 'features/carbonarajob/carbonaraChainPalette'
 import CarbonaraPaePlot from 'features/carbonarajob/CarbonaraPaePlot'
 import CarbonaraPdbCheckPanel from 'features/carbonarajob/CarbonaraPdbCheckPanel'
-import CarbonaraFastaCheckPanel from 'features/carbonarajob/CarbonaraFastaCheckPanel'
+import CarbonaraFastaCheckPanel, {
+  type MissingResiduesInfo
+} from 'features/carbonarajob/CarbonaraFastaCheckPanel'
+import CarbonaraPdbfixerButton from 'features/carbonarajob/CarbonaraPdbfixerButton'
+import CarbonaraGuinierPanel from 'features/carbonarajob/CarbonaraGuinierPanel'
 
 interface ConstraintPairRow {
   res1: string
@@ -228,6 +232,12 @@ const NewCarbonaraJobForm = () => {
   >('idle')
   const [autoFlexRanges, setAutoFlexRanges] = useState<FlexRangeRow[]>([])
   const [autoFlexError, setAutoFlexError] = useState<string | null>(null)
+  // Feature G: missing-residue detection (PDB vs SEQRES and/or uploaded FASTA).
+  // Drives whether the PDBFixer "build" control is offered.
+  const [missingResidues, setMissingResidues] = useState<MissingResiduesInfo>({
+    hasGaps: false,
+    sources: []
+  })
   const autoFlexPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoFlexIdRef = useRef<string | null>(null)
 
@@ -1262,7 +1272,23 @@ const NewCarbonaraJobForm = () => {
                       <CarbonaraFastaCheckPanel
                         pdbFile={values.pdb_file}
                         fastaFile={values.fasta_file}
+                        onMissingResidues={setMissingResidues}
                       />
+
+                      {/* Feature G: PDBFixer "build" button — offered ONLY when
+                          residues are actually detected missing (via the SEQRES
+                          record and/or the uploaded sequence). Clicking it runs
+                          PDBFixer now and swaps in the repaired structure. */}
+                      {missingResidues.hasGaps && (
+                        <CarbonaraPdbfixerButton
+                          pdbFile={values.pdb_file}
+                          sources={missingResidues.sources}
+                          onFixed={(fixed) => {
+                            void setFieldValue('pdb_file', fixed)
+                          }}
+                          disabled={isSubmitting}
+                        />
+                      )}
                     </Box>
 
                     <Grid>
@@ -1306,6 +1332,22 @@ const NewCarbonaraJobForm = () => {
                           label={`Structure ${i + 2}`}
                         />
                       ))}
+
+                    {/* Feature D (opt-in): interactive Guinier analysis — placed
+                        with the initial SAXS fit, since the optional low-q trim
+                        acts on the data before Carbonara reads it. Runs the same
+                        AutoRg-style analysis the job's trim uses, shows the fit,
+                        and lets the user opt into the trim. */}
+                    <CarbonaraGuinierPanel
+                      datFile={values.dat_file}
+                      onDatChange={(file) => {
+                        // The trim is baked into the data, so the job-side
+                        // guinier_trim flag stays off (no double-trim).
+                        void setFieldValue('dat_file', file)
+                        void setFieldValue('guinier_trim', false)
+                      }}
+                      disabled={isSubmitting}
+                    />
                   </Grid>
                 </Paper>
 
@@ -2597,74 +2639,6 @@ const NewCarbonaraJobForm = () => {
                       </Field>
                     </Box>
                   )}
-
-                  {/* Feature G (opt-in): PDBFixer missing-residue repair */}
-                  <Box sx={{ ml: 3, mt: 0.5 }}>
-                    <Field name="fix_missing_residues">
-                      {({
-                        field
-                      }: {
-                        field: {
-                          name: string
-                          value: boolean
-                          onChange: (
-                            e: React.ChangeEvent<HTMLInputElement>
-                          ) => void
-                        }
-                      }) => (
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={field.value}
-                              onChange={field.onChange}
-                              name={field.name}
-                              disabled={isSubmitting}
-                              slotProps={{
-                                input: {
-                                  'aria-label': 'fix-missing-residues-checkbox'
-                                }
-                              }}
-                            />
-                          }
-                          label="Repair missing residues (PDBFixer)"
-                        />
-                      )}
-                    </Field>
-                  </Box>
-
-                  {/* Feature D (opt-in): Guinier low-q trim */}
-                  <Box sx={{ ml: 3, mt: 0.5 }}>
-                    <Field name="guinier_trim">
-                      {({
-                        field
-                      }: {
-                        field: {
-                          name: string
-                          value: boolean
-                          onChange: (
-                            e: React.ChangeEvent<HTMLInputElement>
-                          ) => void
-                        }
-                      }) => (
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={field.value}
-                              onChange={field.onChange}
-                              name={field.name}
-                              disabled={isSubmitting}
-                              slotProps={{
-                                input: {
-                                  'aria-label': 'guinier-trim-checkbox'
-                                }
-                              }}
-                            />
-                          }
-                          label="Trim low-q (Guinier)"
-                        />
-                      )}
-                    </Field>
-                  </Box>
                 </Paper>
 
                 {/* ── Submit ───────────────────────────────────────────── */}

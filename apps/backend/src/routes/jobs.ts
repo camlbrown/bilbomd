@@ -29,6 +29,14 @@ import {
   createCarbonaraAutoFlex,
   getCarbonaraAutoFlex
 } from '../controllers/jobs/carbonaraAutoFlexController.js'
+import {
+  createCarbonaraPdbfixer,
+  getCarbonaraPdbfixer
+} from '../controllers/jobs/carbonaraPdbfixerController.js'
+import {
+  createCarbonaraGuinier,
+  getCarbonaraGuinier
+} from '../controllers/jobs/carbonaraGuinierController.js'
 import { createNewMultiJob } from '../controllers/jobs/multiMdController.js'
 import { downloadPDB, getFoxsData } from '../controllers/foxsController.js'
 import { getFile } from '../controllers/fileDownloadController.js'
@@ -75,6 +83,14 @@ router.route('/carbonara-initfoxs/:id').get(getCarbonaraInitFoxs)
 // MUST be registered before the generic '/:id' and '/:id/:filename' routes.
 router.route('/carbonara-autoflex').post(createCarbonaraAutoFlex)
 router.route('/carbonara-autoflex/:id').get(getCarbonaraAutoFlex)
+
+// Feature G: PDBFixer "build missing residues" preview (queue — no Mongo model).
+router.route('/carbonara-pdbfixer').post(createCarbonaraPdbfixer)
+router.route('/carbonara-pdbfixer/:id').get(getCarbonaraPdbfixer)
+
+// Feature D: Guinier analysis preview (queue — no Mongo model).
+router.route('/carbonara-guinier').post(createCarbonaraGuinier)
+router.route('/carbonara-guinier/:id').get(getCarbonaraGuinier)
 
 // AutoMD-SAXS prep preview (Task 4 — preview queue, no Mongo model). MUST be
 // before the generic '/:id' and '/:id/:filename' routes.

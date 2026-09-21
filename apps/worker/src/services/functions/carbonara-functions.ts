@@ -753,6 +753,120 @@ export const buildAutoFlexContainerArgs = (
   return args
 }
 
+export interface BuildPdbfixerContainerArgsOptions {
+  image: string
+  /** Absolute host directory mounted at /job inside the container. */
+  hostDir: string
+  /** Basename of the structure (PDB) file inside hostDir. */
+  pdbFileName: string
+  /** Python binary to invoke inside the container. */
+  pythonBin: string
+  /** In-container path to carbonara_pdbfixer.py. */
+  pdbfixerPath: string
+  /** In-container Carbonara checkout root (for the setup_carbonara_allAtom import). */
+  carbonaraRoot: string
+  /** 3-letter residue used for number-gap inference when no SEQRES (default GLY). */
+  residueName?: string
+  /** Max single-gap length PDBFixer will auto-build (default 80). */
+  maxGap?: number
+  /** Optional host path to bind-mount over pdbfixerPath for local dev. */
+  pdbfixerMount?: string
+  /** In-container prefix for the job dir. Defaults to '/job' (podman bind mount);
+   *  inprocess/k8s passes the REAL host dir so command paths are valid in-pod. */
+  jobMount?: string
+}
+
+/**
+ * Build the container arg vector for a carbonara-pdbfixer preview:
+ *   <bin> run --rm -v <hostDir>:/job:Z [pdbfixerMount] <image> \
+ *     <pythonBin> <pdbfixerPath> --pdb /job/<pdb> --outdir /job --carbonara-root <root>
+ * carbonara_pdbfixer.py builds internal missing residues and writes result.json
+ * ({status, residues_built, fixed_pdb}). Mirrors buildAutoFlexContainerArgs.
+ */
+export const buildPdbfixerContainerArgs = (
+  opts: BuildPdbfixerContainerArgsOptions
+): string[] => {
+  const mount = opts.jobMount ?? CARBONARA_JOB_MOUNT
+  const args = ['run', '--rm', '-v', `${opts.hostDir}:${CARBONARA_JOB_MOUNT}:Z`]
+
+  if (opts.pdbfixerMount) {
+    args.push('-v', `${opts.pdbfixerMount}:${opts.pdbfixerPath}:ro,Z`)
+  }
+
+  args.push(
+    opts.image,
+    opts.pythonBin,
+    opts.pdbfixerPath,
+    '--pdb', `${mount}/${opts.pdbFileName}`,
+    '--outdir', mount,
+    '--carbonara-root', opts.carbonaraRoot
+  )
+
+  if (opts.residueName) {
+    args.push('--residue-name', opts.residueName)
+  }
+  if (opts.maxGap != null) {
+    args.push('--max-gap', String(opts.maxGap))
+  }
+
+  return args
+}
+
+export interface BuildGuinierContainerArgsOptions {
+  image: string
+  /** Absolute host directory mounted at /job inside the container. */
+  hostDir: string
+  /** Basename of the SAXS (.dat) file inside hostDir. */
+  datFileName: string
+  /** Python binary to invoke inside the container. */
+  pythonBin: string
+  /** In-container path to carbonara_guinier.py. */
+  guinierPath: string
+  /** In-container Carbonara checkout root (for the setup_carbonara_allAtom import). */
+  carbonaraRoot: string
+  /** Cap on the low-q fraction the trim may remove (default 0.25, matches job). */
+  maxTrimFraction?: number
+  /** Optional host path to bind-mount over guinierPath for local dev. */
+  guinierMount?: string
+  /** In-container prefix for the job dir. Defaults to '/job' (podman bind mount);
+   *  inprocess/k8s passes the REAL host dir so command paths are valid in-pod. */
+  jobMount?: string
+}
+
+/**
+ * Build the container arg vector for a carbonara-guinier preview:
+ *   <bin> run --rm -v <hostDir>:/job:Z [guinierMount] <image> \
+ *     <pythonBin> <guinierPath> --dat /job/<dat> --outdir /job --carbonara-root <root>
+ * carbonara_guinier.py runs the AutoRg-style Guinier analysis (no data mutation)
+ * and writes result.json ({rg, i0, r2, qrg_*, slope, intercept, trim_*, points}).
+ * Mirrors buildPdbfixerContainerArgs / buildAutoFlexContainerArgs.
+ */
+export const buildGuinierContainerArgs = (
+  opts: BuildGuinierContainerArgsOptions
+): string[] => {
+  const mount = opts.jobMount ?? CARBONARA_JOB_MOUNT
+  const args = ['run', '--rm', '-v', `${opts.hostDir}:${CARBONARA_JOB_MOUNT}:Z`]
+
+  if (opts.guinierMount) {
+    args.push('-v', `${opts.guinierMount}:${opts.guinierPath}:ro,Z`)
+  }
+
+  args.push(
+    opts.image,
+    opts.pythonBin,
+    opts.guinierPath,
+    '--dat', `${mount}/${opts.datFileName}`,
+    '--outdir', mount,
+    '--carbonara-root', opts.carbonaraRoot
+  )
+
+  if (opts.maxTrimFraction != null) {
+    args.push('--max-trim-fraction', String(opts.maxTrimFraction))
+  }
+
+  return args
+}
+
 // ---------------------------------------------------------------------------
 // R1 — results analysis (carbonara_results.py -> analysis.json) helpers
 // ---------------------------------------------------------------------------

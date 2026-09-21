@@ -209,6 +209,26 @@ export const config = {
     autoFlexMount: getEnvVarWithDefault('CARBONARA_AUTOFLEX_MOUNT', ''),
     // Concurrency for the dedicated carbonara-autoflex BullMQ worker.
     autoFlexConcurrency: parsePositiveIntEnv('CARBONARA_AUTOFLEX_CONCURRENCY', 2),
+    // Feature G: PDBFixer "build missing residues" preview helper.
+    // In-container path to carbonara_pdbfixer.py (baked into the image).
+    pdbfixerPath: getEnvVarWithDefault(
+      'CARBONARA_PDBFIXER_PATH',
+      '/opt/carbonara/carbonara_pdbfixer.py'
+    ),
+    // Optional host path to bind-mount the helper for local dev (like autoFlexMount).
+    pdbfixerMount: getEnvVarWithDefault('CARBONARA_PDBFIXER_MOUNT', ''),
+    // Concurrency for the dedicated carbonara-pdbfixer BullMQ worker.
+    pdbfixerConcurrency: parsePositiveIntEnv('CARBONARA_PDBFIXER_CONCURRENCY', 2),
+    // Feature D: Guinier analysis preview helper (carbonara_guinier.py).
+    // In-container path (baked into the image).
+    guinierPath: getEnvVarWithDefault(
+      'CARBONARA_GUINIER_PATH',
+      '/opt/carbonara/carbonara_guinier.py'
+    ),
+    // Optional host path to bind-mount the helper for local dev.
+    guinierMount: getEnvVarWithDefault('CARBONARA_GUINIER_MOUNT', ''),
+    // Concurrency for the dedicated carbonara-guinier BullMQ worker.
+    guinierConcurrency: parsePositiveIntEnv('CARBONARA_GUINIER_CONCURRENCY', 2),
     // R1: results-analysis helper (carbonara_results.py -> analysis.json),
     // run as a post-reconstruction step on each Carbonara job.
     resultsPath: getEnvVarWithDefault(

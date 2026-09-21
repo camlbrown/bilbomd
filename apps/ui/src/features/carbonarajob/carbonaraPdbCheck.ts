@@ -456,6 +456,74 @@ export const extractObservedChains = (text: string): ObservedChain[] => {
   }))
 }
 
+// Extract the PDB's own SEQRES records as FASTA text (one record per chain,
+// header = chain id). SEQRES lists the COMPLETE experimental sequence of each
+// chain, so comparing it against the observed (ATOM) residues reveals residues
+// missing from the built structure — without needing a separate FASTA upload.
+// Returns null when the file has no SEQRES records (many predicted/processed
+// PDBs don't) or no protein chain, so the caller can fall back to the uploaded
+// FASTA. The output is fed straight into checkFastaAgainstStructure, reusing the
+// same alignment + missing-residue logic.
+export const extractSeqresAsFasta = (text: string): string | null => {
+  const lines = text.split(/\r?\n/)
+  const byChain = new Map<string, string[]>() // chainId -> 3-letter residues, in order
+  for (const line of lines) {
+    if (!line.startsWith('SEQRES')) continue
+    const chainId = line.slice(11, 12).trim() || '_'
+    // Residue names start at column 20 (0-indexed 19), whitespace-separated.
+    const tokens = line.slice(19).trim().split(/\s+/).filter(Boolean)
+    const list = byChain.get(chainId) ?? []
+    for (const t of tokens) list.push(t.toUpperCase())
+    byChain.set(chainId, list)
+  }
+  if (byChain.size === 0) return null
+
+  const records: string[] = []
+  for (const [chainId, three] of byChain) {
+    const seq = three.map((r) => THREE_TO_ONE[r] ?? 'X').join('')
+    // Skip non-protein chains (e.g. nucleic acids -> all 'X').
+    if (seq.replace(/X/g, '').length === 0) continue
+    records.push(`>${chainId}\n${seq}`)
+  }
+  return records.length > 0 ? records.join('\n') : null
+}
+
+export interface NumberingGap {
+  chainId: string
+  start: number // first missing resSeq
+  stop: number // last missing resSeq
+  count: number
+}
+
+// Detect INTERNAL missing residues straight from the structure's residue
+// numbering: a jump in resSeq between consecutive observed (Cα) residues means
+// the residues in between are absent (e.g. 76 -> 78 => residue 77 missing).
+//
+// This is exactly what PDBFixer builds (internal_only=True infers gaps from the
+// numbering) and — unlike aligning the chain against a FASTA/SEQRES sequence — it
+// is unambiguous and immune to multi-chain / repeated-sequence mis-alignment
+// (the antibody problem). It reports only internal gaps (nothing before the first
+// or after the last observed residue), matching PDBFixer's internal_only.
+export const detectNumberingGaps = (text: string): NumberingGap[] => {
+  const gaps: NumberingGap[] = []
+  for (const chain of extractObservedChains(text)) {
+    const res = chain.residues
+    for (let i = 1; i < res.length; i++) {
+      const prev = res[i - 1]!.resSeq
+      const cur = res[i]!.resSeq
+      if (cur - prev > 1) {
+        gaps.push({
+          chainId: chain.id,
+          start: prev + 1,
+          stop: cur - 1,
+          count: cur - prev - 1
+        })
+      }
+    }
+  }
+  return gaps
+}
+
 // Decide format from the filename and run the appropriate checks.
 export const checkCarbonaraStructure = (
   fileName: string,

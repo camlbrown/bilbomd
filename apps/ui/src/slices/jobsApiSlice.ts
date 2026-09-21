@@ -77,6 +77,48 @@ interface Af2PaeStatusResponse {
   [key: string]: unknown
 }
 
+// Feature G: PDBFixer "build missing residues" preview.
+interface CarbonaraPdbfixerResponse {
+  previewId: string
+}
+export interface CarbonaraPdbfixerResult {
+  status: 'pending' | 'done' | 'error'
+  success?: boolean
+  residues_built?: number
+  fixed_pdb?: string | null
+  message?: string
+}
+
+// Feature D: Guinier analysis preview.
+interface CarbonaraGuinierResponse {
+  previewId: string
+}
+export interface CarbonaraGuinierResult {
+  status: 'pending' | 'done' | 'error'
+  success?: boolean
+  rg?: number
+  i0?: number
+  r2?: number
+  quality?: number
+  qrg_min?: number
+  qrg_max?: number
+  slope?: number
+  intercept?: number
+  window_q2_min?: number
+  window_q2_max?: number
+  trim_q?: number
+  trimmed_points?: number
+  will_trim?: boolean
+  trim_status?: string
+  points_total?: number
+  first_q_before?: number
+  first_q_after?: number
+  first_point_1_indexed?: number
+  last_point_1_indexed?: number
+  points?: { q2: number; lnI: number }[]
+  message?: string
+}
+
 // -----------------------------------------------------------------------
 // Carbonara results analysis.json contract (matches infra/carbonara/carbonara_results.py output)
 // -----------------------------------------------------------------------
@@ -588,6 +630,34 @@ export const jobsApiSlice = apiSlice.injectEndpoints({
         method: 'GET'
       })
     }),
+    // Feature G: PDBFixer build-missing-residues preview.
+    addCarbonaraPdbfixer: builder.mutation<CarbonaraPdbfixerResponse, FormData>({
+      query: (formData) => ({
+        url: '/jobs/carbonara-pdbfixer',
+        method: 'POST',
+        body: formData
+      })
+    }),
+    getCarbonaraPdbfixer: builder.query<CarbonaraPdbfixerResult, string>({
+      query: (previewId) => ({
+        url: `/jobs/carbonara-pdbfixer/${previewId}`,
+        method: 'GET'
+      })
+    }),
+    // Feature D: Guinier analysis preview.
+    addCarbonaraGuinier: builder.mutation<CarbonaraGuinierResponse, FormData>({
+      query: (formData) => ({
+        url: '/jobs/carbonara-guinier',
+        method: 'POST',
+        body: formData
+      })
+    }),
+    getCarbonaraGuinier: builder.query<CarbonaraGuinierResult, string>({
+      query: (previewId) => ({
+        url: `/jobs/carbonara-guinier/${previewId}`,
+        method: 'GET'
+      })
+    }),
     // Carbonara results: fetch analysis.json for a completed job
     getCarbonaraAnalysis: builder.query<CarbonaraAnalysis, string>({
       query: (jobId) => ({
@@ -683,6 +753,10 @@ export const {
   useLazyGetCarbonaraInitFoxsQuery,
   useAddCarbonaraAutoFlexMutation,
   useLazyGetCarbonaraAutoFlexQuery,
+  useAddCarbonaraPdbfixerMutation,
+  useLazyGetCarbonaraPdbfixerQuery,
+  useAddCarbonaraGuinierMutation,
+  useLazyGetCarbonaraGuinierQuery,
   useGetCarbonaraAnalysisQuery,
   useGetAutoMDSAXSAnalysisQuery,
   useGetAutoMDSAXSLiveProgressQuery,

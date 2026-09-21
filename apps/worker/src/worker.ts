@@ -16,6 +16,8 @@ import { createMultiMDWorker } from './workers/multiMdWorker.js'
 import { createCarbonaraPreviewWorker } from './workers/carbonaraPreviewWorker.js'
 import { createAutoMDSaxsPrepWorker } from './workers/automdSaxsPrepWorker.js'
 import { createCarbonaraAutoFlexWorker } from './workers/carbonaraAutoFlexWorker.js'
+import { createCarbonaraPdbfixerWorker } from './workers/carbonaraPdbfixerWorker.js'
+import { createCarbonaraGuinierWorker } from './workers/carbonaraGuinierWorker.js'
 import { checkNERSC } from './workers/workerControl.js'
 import { monitorAndCleanupJobs } from './workers/bilboMdNerscJobMonitor.js'
 import { redis } from './queues/redisConn.js'
@@ -41,6 +43,8 @@ let multimdWorker: Worker | null = null
 let carbonaraPreviewWorker: Worker | null = null
 let automdSaxsPrepWorker: Worker | null = null
 let carbonaraAutoFlexWorker: Worker | null = null
+let carbonaraPdbfixerWorker: Worker | null = null
+let carbonaraGuinierWorker: Worker | null = null
 
 const workerOptions: WorkerOptions = {
   connection: redis,
@@ -71,6 +75,16 @@ const carbonaraAutoFlexWorkerOptions: WorkerOptions = {
   concurrency: config.carbonara.autoFlexConcurrency
 }
 
+const carbonaraPdbfixerWorkerOptions: WorkerOptions = {
+  connection: redis,
+  concurrency: config.carbonara.pdbfixerConcurrency
+}
+
+const carbonaraGuinierWorkerOptions: WorkerOptions = {
+  connection: redis,
+  concurrency: config.carbonara.guinierConcurrency
+}
+
 const automdSaxsPrepWorkerOptions: WorkerOptions = {
   connection: redis,
   concurrency: 2
@@ -87,6 +101,8 @@ const startWorkers = async () => {
     !multimdWorker ||
     !carbonaraPreviewWorker ||
     !carbonaraAutoFlexWorker ||
+    !carbonaraPdbfixerWorker ||
+    !carbonaraGuinierWorker ||
     !automdSaxsPrepWorker
   ) {
     // If running on NERSC, check credentials before starting workers
@@ -120,6 +136,16 @@ const startWorkers = async () => {
     )
     logger.info(`Carbonara AutoFlex Worker started on ${systemName}`)
 
+    carbonaraPdbfixerWorker = createCarbonaraPdbfixerWorker(
+      carbonaraPdbfixerWorkerOptions
+    )
+    logger.info(`Carbonara PDBFixer Worker started on ${systemName}`)
+
+    carbonaraGuinierWorker = createCarbonaraGuinierWorker(
+      carbonaraGuinierWorkerOptions
+    )
+    logger.info(`Carbonara Guinier Worker started on ${systemName}`)
+
     automdSaxsPrepWorker = createAutoMDSaxsPrepWorker(automdSaxsPrepWorkerOptions)
     logger.info(`AutoMD-SAXS Prep Worker started on ${systemName}`)
   } else {
@@ -136,6 +162,14 @@ const workers = [
   {
     getWorker: () => carbonaraAutoFlexWorker,
     name: 'Carbonara AutoFlex Worker'
+  },
+  {
+    getWorker: () => carbonaraPdbfixerWorker,
+    name: 'Carbonara PDBFixer Worker'
+  },
+  {
+    getWorker: () => carbonaraGuinierWorker,
+    name: 'Carbonara Guinier Worker'
   },
   { getWorker: () => automdSaxsPrepWorker, name: 'AutoMD-SAXS Prep Worker' }
 ]
