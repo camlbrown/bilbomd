@@ -23,8 +23,9 @@ uploads:
 ui:
   image:
     repository: gitlab.diamond.ac.uk:5050/kri42825/bilbomd/bilbomd-ui
-    # Carbonara upstream re-base (614d099) + Phase-2 opt-in features G/E(a)/D.
-    tag: rebase-p2-20260909
+    # updated-carbonara: re-base (614d099) + G/E(a)/D + E(b) flexible disulfides +
+    # F breaklink + the interactive Guinier/PDBFixer UI + 6 hardening rounds.
+    tag: updated-carbonara-20260921
     pullPolicy: Always
   containerPort: 80
   service:
@@ -38,8 +39,9 @@ ui:
 backend:
   image:
     repository: gitlab.diamond.ac.uk:5050/kri42825/bilbomd/bilbomd-backend
-    # Carbonara upstream re-base + Phase-2: G/E/D controller/validation/schema.
-    tag: rebase-p2-20260909
+    # updated-carbonara: G/E(a)/D/E(b)/F controllers + validation (numeric bounds,
+    # upload size limit, mixture layout) + schema.
+    tag: updated-carbonara-20260921
     pullPolicy: Always
   containerPort: 3500
   # The UI's nginx proxies /api to `backend:3500`, so this Service MUST be `backend`.
@@ -89,10 +91,11 @@ worker:
     # Immutable tag (NOT :latest). :latest + IfNotPresent silently won't re-pull a
     # rebuilt image (the node keeps the cached digest); a distinct tag guarantees
     # the new image is pulled and leaves the old :latest intact for rollback.
-    # rebase-p2-20260909 = Carbonara upstream re-base (614d099) + Phase-2 opt-in
-    # features G (PDBFixer), E(a) (disulfide-safe flex), D (Guinier trim). Carries
-    # the earlier chi2fix mixture-χ² + PAE fixes too.
-    tag: rebase-p2-20260909
+    # updated-carbonara-20260921 = re-base (614d099) + G (PDBFixer), E(a)
+    # (disulfide-safe flex), D (Guinier), E(b) (flexible disulfides), F (breaklink
+    # long-linker split) + 6 hardening rounds (SAXS/param validation, NaN-safe
+    # JSON, feature-composition guards). Carries chi2fix mixture-χ² + PAE too.
+    tag: updated-carbonara-20260921
     # IfNotPresent, NOT Always: this image is ~23 GB — we don't want to re-pull it on
     # every restart. First schedule on a node pulls the new tag once (several minutes).
     pullPolicy: IfNotPresent
