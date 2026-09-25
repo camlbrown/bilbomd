@@ -79,6 +79,11 @@ export const processCarbonaraAutoFlex = async (
       paeFileName: paeFile ?? null,
       paeFlexThreshold: paeFlexThreshold ?? null,
       autoFlexMount: config.carbonara.autoFlexMount || undefined,
+      // Overlay the same feature-F-capable setup_carbonara.py the runner uses, so
+      // the preview's internal setup call matches the fit (and stays consistent
+      // between local mount-mode and the baked k8s image).
+      setupMountHost: config.carbonara.setupMount || undefined,
+      setupPath: config.carbonara.setupPath,
       // inprocess (k8s): no /job bind mount — use the real work dir so the command
       // paths are valid in-pod. podman mode keeps '/job'.
       jobMount:

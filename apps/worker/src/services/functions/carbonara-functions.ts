@@ -724,6 +724,13 @@ export interface BuildAutoFlexContainerArgsOptions {
   /** Optional host path to bind-mount over autoFlexPath for local dev.
    *  When non-empty, inserts -v <autoFlexMount>:<autoFlexPath>:ro,Z. */
   autoFlexMount?: string
+  /** Optional host path to bind-mount over setup_carbonara.py for local dev.
+   *  The autoflex preview runs setup_carbonara.py internally, so it MUST see the
+   *  same (feature-F-capable) setup the runner uses — otherwise a mounted, newer
+   *  autoflex.py can pass flags the stale baked setup rejects. Mirrors the runner's
+   *  setupMountHost/setupPath (CARBONARA_SETUP_MOUNT). */
+  setupMountHost?: string
+  setupPath?: string
   /** In-container prefix for the job dir. Defaults to '/job' (podman bind mount);
    *  in inprocess/k8s mode the caller passes the REAL host dir. */
   jobMount?: string
@@ -746,6 +753,12 @@ export const buildAutoFlexContainerArgs = (
 
   if (opts.autoFlexMount) {
     args.push('-v', `${opts.autoFlexMount}:${opts.autoFlexPath}:ro,Z`)
+  }
+  // Overlay the feature-F-capable setup_carbonara.py so the preview's internal
+  // setup call matches the runner's (keeps local mount-mode consistent with the
+  // baked k8s image; without this a mounted autoflex + stale baked setup diverge).
+  if (opts.setupMountHost && opts.setupPath) {
+    args.push('-v', `${opts.setupMountHost}:${opts.setupPath}:ro,Z`)
   }
 
   args.push(

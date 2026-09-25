@@ -91,11 +91,15 @@ worker:
     # Immutable tag (NOT :latest). :latest + IfNotPresent silently won't re-pull a
     # rebuilt image (the node keeps the cached digest); a distinct tag guarantees
     # the new image is pulled and leaves the old :latest intact for rollback.
-    # updated-carbonara-20260921 = re-base (614d099) + G (PDBFixer), E(a)
-    # (disulfide-safe flex), D (Guinier), E(b) (flexible disulfides), F (breaklink
-    # long-linker split) + 6 hardening rounds (SAXS/param validation, NaN-safe
-    # JSON, feature-composition guards). Carries chi2fix mixture-χ² + PAE too.
-    tag: updated-carbonara-20260921
+    # updated-carbonara-20260925 = 20260921 + autoflex-preview fix: the pre-fit
+    # flexible-region preview now runs setup with --no-split_long_linkers so
+    # feature F (fit-time long-linker split) no longer inflates the suggestions
+    # (5_C239S 6->4, smarcal 6->5); F still applies during the actual fit. Thin
+    # overlay over 20260921 (only /opt/carbonara/carbonara_autoflex.py changed).
+    # 20260921 = re-base (614d099) + G (PDBFixer), E(a) (disulfide-safe flex), D
+    # (Guinier), E(b) (flexible disulfides), F (breaklink long-linker split) + 6
+    # hardening rounds. Carries chi2fix mixture-χ² + PAE too.
+    tag: updated-carbonara-20260925
     # IfNotPresent, NOT Always: this image is ~23 GB — we don't want to re-pull it on
     # every restart. First schedule on a node pulls the new tag once (several minutes).
     pullPolicy: IfNotPresent

@@ -182,7 +182,19 @@ def main() -> None:
             '--name', args.name,
             '--dir', str(workroot),
             '--min_q', str(args.min_q),
-            '--max_q', str(effective_max_q)
+            '--max_q', str(effective_max_q),
+            # Feature F (breaklink) is a FIT-TIME sampling optimisation: it splits
+            # long disordered linkers with 3-residue pseudo-helix separators so the
+            # Monte-Carlo sampler explores them better. That belongs in the actual
+            # fit (the runner leaves it default-on), NOT in this pre-fit preview:
+            # here we want to show the user the *logical* flexible linkers they'll
+            # review/edit, not the internal split artifacts. Disabling F keeps the
+            # preview identical to the pre-F behaviour (e.g. 5_C239S -> 4 regions,
+            # not 6) and stable regardless of which engine build is baked in.
+            # NOTE: this flag only exists on the feature-F setup_carbonara.py; the
+            # preview must therefore run against an F-capable setup (baked in the
+            # updated-carbonara image / mounted via CARBONARA_SETUP_MOUNT locally).
+            '--no-split_long_linkers'
         ]
         if args.pae:
             pae_path = Path(args.pae)
