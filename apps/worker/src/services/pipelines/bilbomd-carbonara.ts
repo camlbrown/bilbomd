@@ -250,17 +250,30 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         // build that handles CYS2/CYX.
         const disulfideInContainer = undefined
 
+        // maxBackmap === 0 means "no cap": reconstruct every run's final model
+        // (one all-atom output per fit). coordsFiles is already best-first from
+        // the runner, so a positive cap keeps the best-fitting runs.
+        const effectiveMax =
+          config.carbonara.maxBackmap > 0
+            ? config.carbonara.maxBackmap
+            : coordsFiles.length
+
         const tasks = buildReconstructionPlan({
           coordsFiles,
           scenarioRoot,
           outRoot: outRootContainer,
-          maxModels: config.carbonara.maxBackmap
+          maxModels: effectiveMax
         })
 
         if (tasks.length < coordsFiles.length) {
           logger.info(
-            `Carbonara reconstruction capped at ${config.carbonara.maxBackmap} ` +
-              `models (${coordsFiles.length} available) for ${foundJob.uuid}`
+            `Carbonara reconstruction capped at ${effectiveMax} ` +
+              `best-fitting models (${coordsFiles.length} available) for ${foundJob.uuid}`
+          )
+        } else {
+          logger.info(
+            `Carbonara reconstructing all ${tasks.length} final models ` +
+              `(one per run) for ${foundJob.uuid}`
           )
         }
 

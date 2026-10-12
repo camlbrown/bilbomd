@@ -638,6 +638,56 @@ describe('buildReconstructionPlan', () => {
       })
     ).toEqual([])
   })
+
+  it('reconstructs one task per run when maxModels covers all (one-per-run)', () => {
+    // 20 single-structure final models; maxModels >= count => keep them all.
+    const files = Array.from(
+      { length: 20 },
+      (_, i) => `${scenarioRoot}/fitdata/mol${i + 1}_sub_0_end_xyz.dat`
+    )
+    const tasks = buildReconstructionPlan({
+      coordsFiles: files,
+      scenarioRoot,
+      outRoot,
+      maxModels: 20
+    })
+    expect(tasks).toHaveLength(20)
+  })
+
+  it('preserves incoming best-first order when capping (does not re-sort by run index)', () => {
+    // coordsFiles arrive best-first from the runner (mol18 best, mol10 next, ...).
+    // A cap must keep those leading entries, NOT the numerically-lowest runs.
+    const files = [
+      `${scenarioRoot}/fitdata/mol18_sub_0_end_xyz.dat`,
+      `${scenarioRoot}/fitdata/mol10_sub_0_end_xyz.dat`,
+      `${scenarioRoot}/fitdata/mol3_sub_0_end_xyz.dat`
+    ]
+    const tasks = buildReconstructionPlan({
+      coordsFiles: files,
+      scenarioRoot,
+      outRoot,
+      maxModels: 2
+    })
+    expect(tasks.map((t) => t.name)).toEqual(['mol18_sub_0_end', 'mol10_sub_0_end'])
+  })
+
+  it('keeps whole run-groups best-first for a mixture when capping', () => {
+    // Two species per run; runs arrive best-first (run 5 before run 2). A cap of
+    // 2 keeps the complete best run-group (both species of run 5), not run 2.
+    const files = [
+      `${scenarioRoot}/fitdata/mol5_sub_0_end_xyz.dat`,
+      `${scenarioRoot}/fitdata/mol5_sub_1_end_xyz.dat`,
+      `${scenarioRoot}/fitdata/mol2_sub_0_end_xyz.dat`,
+      `${scenarioRoot}/fitdata/mol2_sub_1_end_xyz.dat`
+    ]
+    const tasks = buildReconstructionPlan({
+      coordsFiles: files,
+      scenarioRoot,
+      outRoot,
+      maxModels: 2
+    })
+    expect(tasks.map((t) => t.name)).toEqual(['mol5_sub_0_end', 'mol5_sub_1_end'])
+  })
 })
 
 describe('buildBackmapLoopCommand', () => {

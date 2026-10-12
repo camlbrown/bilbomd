@@ -161,7 +161,12 @@ export const config = {
     // Absolute path is required — foxs is a system binary, not on the carbonara
     // micromamba env PATH.
     foxsBin: getEnvVarWithDefault('CARBONARA_IMG_FOXS_BIN', '/usr/bin/foxs'),
-    maxBackmap: parsePositiveIntEnv('CARBONARA_MAX_BACKMAP', 5),
+    // Max coarse models reconstructed to all-atom (cg2all backmap + FoXS). 0 =
+    // no cap => reconstruct EVERY run's final model (one all-atom output per
+    // fit). A positive value keeps only that many, and because the runner now
+    // emits final_model_files best-first (lowest ScatterFitFirst), a cap keeps
+    // the BEST-fitting runs rather than an arbitrary lexicographic slice.
+    maxBackmap: parseTimeoutEnv('CARBONARA_MAX_BACKMAP', 0),
     // 0 = no wall-clock cap (default). Covers the cg2all reconstruction and the
     // FoXS analysis steps; set a positive ms value to re-enable a cap.
     backmapTimeoutMs: parseTimeoutEnv('CARBONARA_BACKMAP_TIMEOUT_MS', 0),

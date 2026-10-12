@@ -405,6 +405,10 @@ export const buildReconstructionPlan = (
   )
   let selected: string[]
   if (speciesCount > 1) {
+    // Group species by run, preserving the ORDER runs first appear in
+    // coordsFiles. coordsFiles arrives best-first (runner sorts by fit score),
+    // so first-seen order keeps the best runs first; do NOT re-sort by run
+    // index, which would discard that ranking when a cap applies.
     const byRun = new Map<number, string[]>()
     for (const f of coordsFiles) {
       const r = runIndexOf(f)
@@ -413,7 +417,7 @@ export const buildReconstructionPlan = (
       byRun.set(r, arr)
     }
     selected = []
-    for (const r of [...byRun.keys()].sort((a, b) => a - b)) {
+    for (const r of byRun.keys()) {
       const grp = byRun.get(r) as string[]
       if (selected.length > 0 && selected.length + grp.length > maxModels) break
       selected.push(...grp)

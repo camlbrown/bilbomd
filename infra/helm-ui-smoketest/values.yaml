@@ -91,17 +91,17 @@ worker:
     # Immutable tag (NOT :latest). :latest + IfNotPresent silently won't re-pull a
     # rebuilt image (the node keeps the cached digest); a distinct tag guarantees
     # the new image is pulled and leaves the old :latest intact for rollback.
-    # updated-carbonara-20260926 = 20260925 + generate_structure buffer-overflow
-    # fix: the C++ Flexible_generator wrote output filenames into a char[100],
-    # which overflowed on deep k8s uploads paths (~105 chars) and aborted, so the
-    # auto-flex sheet-safety check saw no random structures and kept ALL linkers
-    # (52 instead of 4) — only on k8s (local paths are short). Now uses
-    # std::string (any path length safe). Rebuilt generate_structure only.
-    # 20260925 = 20260921 + autoflex-preview --no-split_long_linkers (feature F is
-    # fit-time only, not shown in the preview). 20260921 = re-base (614d099) + G
-    # (PDBFixer), E(a) (disulfide-safe flex), D (Guinier), E(b) (flexible
-    # disulfides), F (breaklink) + 6 hardening rounds. chi2fix mixture-χ² + PAE.
-    tag: updated-carbonara-20260926
+    # updated-carbonara-20260927 = 20260926 + all-atom reconstruction: one output
+    # per run (best-first). CARBONARA_MAX_BACKMAP now defaults to 0 = reconstruct
+    # EVERY run's final model (N fits -> N all-atom); the runner emits
+    # final_model_files ranked by final ScatterFitFirst so any positive cap keeps
+    # the BEST-fitting runs (was an arbitrary lexicographic slice of 5). Rebuilt
+    # worker dist + runner wrapper over 20260926.
+    # 20260926 = + generate_structure char[100]->std::string buffer-overflow fix
+    # (deep k8s paths aborted -> all linkers kept). 20260925 = + autoflex-preview
+    # --no-split_long_linkers (feature F is fit-time only). 20260921 = re-base
+    # (614d099) + G/E(a)/D/E(b)/F + 6 hardening rounds. chi2fix mixture-χ² + PAE.
+    tag: updated-carbonara-20260927
     # IfNotPresent, NOT Always: this image is ~23 GB — we don't want to re-pull it on
     # every restart. First schedule on a node pulls the new tag once (several minutes).
     pullPolicy: IfNotPresent

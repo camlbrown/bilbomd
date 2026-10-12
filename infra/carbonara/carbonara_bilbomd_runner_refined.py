@@ -812,10 +812,81 @@ def collect_outputs(
     shutil.copy2(summary_path, outdir / "wrapper_summary.json")
 
 
+def _run_index_from_name(name: str) -> int:
+    """Run number N from a molN... filename (0 if absent)."""
+    m = re.match(r"mol(\d+)", name)
+    return int(m.group(1)) if m else 0
+
+
+def _sub_index_from_name(name: str) -> int:
+    """Mixture species index from a ..._sub_<s>_... filename (0 if absent)."""
+    m = re.search(r"_sub_(\d+)_", name)
+    return int(m.group(1)) if m else 0
+
+
+def _final_scatter_fit_for_run(fitdata_dir: Path, run: int) -> float | None:
+    """Final fit quality for a run = ScatterFitFirst from the last JSON line of
+    fitLog<run>.dat (lower is a better fit). Returns None when unavailable so
+    the caller can sort such runs last. Defensive: never raises."""
+    fl = fitdata_dir / f"fitLog{run}.dat"
+    if not fl.is_file():
+        return None
+    last = None
+    try:
+        for line in fl.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(obj, dict) and "ScatterFitFirst" in obj:
+                last = obj
+    except OSError:
+        return None
+    if last is None:
+        return None
+    try:
+        v = float(last["ScatterFitFirst"])
+    except (TypeError, ValueError):
+        return None
+    return v if v == v else None  # drop NaN
+
+
 def summarise_outputs(fitdata_dir: Path) -> dict[str, Any]:
     fit_logs = sorted(fitdata_dir.glob("fitLog*.dat"))
     model_like_files = sorted(fitdata_dir.glob("mol*"))
-    final_model_files = sorted(fitdata_dir.glob("mol*_end_xyz.dat"))
+    # Order each run's final model by its converged fit quality (best first), NOT
+    # lexicographically. Downstream all-atom reconstruction may cap the number of
+    # models it backmaps; a lexicographic sort put mol10,mol11,... before mol1_
+    # and so backmapped an arbitrary subset w.r.t. fitness. Ranking by the final
+    # ScatterFitFirst (from fitLog<run>.dat) means any cap keeps the BEST runs,
+    # and the emitted order is already best-first for the results listing. Runs
+    # with no parseable score sort last; ties break by (run, sub) so a mixture's
+    # per-run species stay grouped and contiguous.
+    run_scores: dict[int, float | None] = {}
+
+    def _final_sort_key(p: Path) -> tuple[int, float, int, int]:
+        name = p.name
+        run = _run_index_from_name(name)
+        if run not in run_scores:
+            run_scores[run] = _final_scatter_fit_for_run(fitdata_dir, run)
+        score = run_scores[run]
+        return (
+            0 if score is not None else 1,         # scored runs first
+            score if score is not None else 0.0,   # then best (lowest) score
+            run,
+            _sub_index_from_name(name),
+        )
+
+    final_model_files = sorted(
+        fitdata_dir.glob("mol*_end_xyz.dat"), key=_final_sort_key
+    )
+    final_model_scores = {
+        p.name: run_scores.get(_run_index_from_name(p.name))
+        for p in final_model_files
+    }
     scatter_files = sorted(fitdata_dir.glob("scatter*.dat"))
     initial_scatter_files = sorted(fitdata_dir.glob("mol*_initial_scatter.dat"))
 
@@ -834,7 +905,11 @@ def summarise_outputs(fitdata_dir: Path) -> dict[str, Any]:
         "n_nonempty_scatter_files": len(nonempty(scatter_files)),
         "n_initial_scatter_files": len(initial_scatter_files),
         "n_nonempty_initial_scatter_files": len(nonempty(initial_scatter_files)),
+        # Best-first (lowest final ScatterFitFirst). Downstream reconstruction
+        # consumes this order; a cap keeps the leading (best) entries.
         "final_model_files": [str(p) for p in final_model_files],
+        # Per-file final fit score (run-level ScatterFitFirst; null if unknown).
+        "final_model_scores": final_model_scores,
     }
 
 
