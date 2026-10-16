@@ -615,12 +615,19 @@ export const selectBestAaModel = (
 export interface BuildBackmapContainerArgsOptions {
   image: string
   hostJobDir: string
-  loopBody: string
+  /** In-container path to the backmap script file, executed with `bash -l`.
+   *  The reconstruction loop is written to a FILE (not passed as an inline
+   *  `bash -lc "<body>"` argument) so the spawn argv stays tiny regardless of how
+   *  many models are reconstructed. With one-per-run on a large mixture (e.g.
+   *  60 models) the inline body exceeded the OS single-arg limit
+   *  (MAX_ARG_STRLEN ~128 KB) and spawn failed with E2BIG. */
+  scriptPathContainer: string
 }
 
 /**
  * Build the podman argument vector for the backmap container run.
- * Invokes /bin/bash -lc <loopBody> inside the container.
+ * Invokes `/bin/bash -l <scriptPathContainer>` inside the container (login shell
+ * preserves the same PATH/env the previous `-lc` form had).
  */
 export const buildBackmapContainerArgs = (
   opts: BuildBackmapContainerArgsOptions
@@ -631,8 +638,8 @@ export const buildBackmapContainerArgs = (
   `${opts.hostJobDir}:${CARBONARA_JOB_MOUNT}:Z`,
   opts.image,
   '/bin/bash',
-  '-lc',
-  opts.loopBody
+  '-l',
+  opts.scriptPathContainer
 ]
 
 // ---------------------------------------------------------------------------

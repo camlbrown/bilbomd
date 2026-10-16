@@ -91,12 +91,16 @@ worker:
     # Immutable tag (NOT :latest). :latest + IfNotPresent silently won't re-pull a
     # rebuilt image (the node keeps the cached digest); a distinct tag guarantees
     # the new image is pulled and leaves the old :latest intact for rollback.
-    # updated-carbonara-20260927 = 20260926 + all-atom reconstruction: one output
-    # per run (best-first). CARBONARA_MAX_BACKMAP now defaults to 0 = reconstruct
-    # EVERY run's final model (N fits -> N all-atom); the runner emits
-    # final_model_files ranked by final ScatterFitFirst so any positive cap keeps
-    # the BEST-fitting runs (was an arbitrary lexicographic slice of 5). Rebuilt
-    # worker dist + runner wrapper over 20260926.
+    # updated-carbonara-20260928 = 20260927 + fix spawn E2BIG in reconstruction:
+    # one-per-run on a large mixture (20 reps x 3 species = 60 models) built the
+    # backmap loop as a single inline `bash -lc` arg (~130 KB) that exceeded the
+    # OS arg limit -> spawn E2BIG -> job failed after the ~10 h fit and BullMQ
+    # retried from scratch. Now the loop runs from a script file (argv stays tiny
+    # for any model count). Worker dist only, over 20260927.
+    # 20260927 = all-atom reconstruction: one output per run (best-first).
+    # CARBONARA_MAX_BACKMAP defaults to 0 = reconstruct EVERY run's final model;
+    # runner emits final_model_files ranked by final ScatterFitFirst so a positive
+    # cap keeps the BEST-fitting runs (was an arbitrary lexicographic slice of 5).
     # 20260926 = + generate_structure char[100]->std::string buffer-overflow fix
     # (deep k8s paths aborted -> all linkers kept). 20260925 = + autoflex-preview
     # --no-split_long_linkers (feature F is fit-time only). 20260921 = re-base

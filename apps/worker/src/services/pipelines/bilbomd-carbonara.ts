@@ -296,10 +296,25 @@ const processBilboMDCarbonaraJob = async (MQjob: BullMQJob) => {
         await fs.ensureFile(backmapLog)
         const backmapStream = fs.createWriteStream(backmapLog, { flags: 'a' })
 
+        // Write the reconstruction loop to a script FILE rather than passing it
+        // as an inline `bash -lc "<body>"` argument. One-per-run on a large
+        // mixture (e.g. 60 models) made that single argv element exceed the OS
+        // limit (MAX_ARG_STRLEN ~128 KB) and spawn threw E2BIG, failing the whole
+        // job after a ~10 h fit (then retried from scratch). A file keeps argv
+        // tiny for any model count. Written under logs/ so it is inside the job
+        // dir (visible at jobMount both in podman and inprocess modes).
+        const backmapScriptHost = path.join(
+          workDir,
+          'logs',
+          'carbonara_backmap.sh'
+        )
+        await fs.writeFile(backmapScriptHost, loopBody, { mode: 0o755 })
+        const backmapScriptContainer = `${jobMount}/logs/carbonara_backmap.sh`
+
         const backmapArgs = buildBackmapContainerArgs({
           image: config.carbonara.image,
           hostJobDir: workDir,
-          loopBody
+          scriptPathContainer: backmapScriptContainer
         })
 
         logger.info(

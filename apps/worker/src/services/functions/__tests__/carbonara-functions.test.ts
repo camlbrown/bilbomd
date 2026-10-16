@@ -811,11 +811,11 @@ describe('buildImpFoxsScoreSnippet', () => {
 })
 
 describe('buildBackmapContainerArgs', () => {
-  it('builds a podman run vector with /bin/bash -lc', () => {
+  it('builds a podman run vector that runs a script file with /bin/bash -l', () => {
     const args = buildBackmapContainerArgs({
       image: 'carbonara-allatom-runtime:dev',
       hostJobDir: '/data/jobs/uuid',
-      loopBody: 'set +e\npython /opt/carbonara/backmap_cli.py ...'
+      scriptPathContainer: '/job/logs/carbonara_backmap.sh'
     })
     expect(args[0]).toBe('run')
     expect(args[1]).toBe('--rm')
@@ -823,8 +823,10 @@ describe('buildBackmapContainerArgs', () => {
     expect(args[3]).toBe(`/data/jobs/uuid:${CARBONARA_JOB_MOUNT}:Z`)
     expect(args[4]).toBe('carbonara-allatom-runtime:dev')
     expect(args[5]).toBe('/bin/bash')
-    expect(args[6]).toBe('-lc')
-    expect(args[7]).toContain('backmap_cli.py')
+    expect(args[6]).toBe('-l')
+    // Script path, NOT an inline command body — keeps argv small (no E2BIG).
+    expect(args[7]).toBe('/job/logs/carbonara_backmap.sh')
+    expect(args).toHaveLength(8)
   })
 })
 
